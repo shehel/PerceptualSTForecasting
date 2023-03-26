@@ -4,7 +4,6 @@ channels:
   - conda-forge
   - defaults
 dependencies:
-  - nni
   - numpy
   - hickle
   - pip
@@ -12,7 +11,8 @@ dependencies:
   - pytorch
   - xarray
   - pip:
+    - nni
     - scikit-image
     - timm
     - tqdm
-prefix: /opt/anaconda3/envs/simvp
+prefix: /home/shehel/miniconda3/envs/simvp

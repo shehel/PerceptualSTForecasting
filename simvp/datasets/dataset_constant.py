@@ -11,6 +11,13 @@ dataset_parameters = {
         'aft_seq_length': 4,
         'total_length': 8
     },
+    't4c': {
+        'in_shape': [12, 8, 128, 128],
+        'pre_seq_length': 12,
+        'aft_seq_length': 1,
+        'total_length': 13
+    },
+
     **dict.fromkeys(['kth20', 'kth'], {
         'in_shape': [10, 1, 128, 128],
         'pre_seq_length': 10,

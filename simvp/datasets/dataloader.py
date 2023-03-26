@@ -1,4 +1,5 @@
 
+import pdb
 
 def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, **kwargs):
     pre_seq_length = kwargs.get('pre_seq_length', 10)
@@ -18,5 +19,9 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, **kw
     elif 'weather' in dataname:  # 'weather', 'weather_t2m', etc.
         from .dataloader_weather import load_data
         return load_data(batch_size, val_batch_size, data_root, num_workers, **kwargs)
+    elif 't4c' in dataname:  # 'weather', 'weather_t2m', etc.
+        from .dataloader_t4c import load_data
+        return load_data(batch_size, val_batch_size, data_root, num_workers)
+
     else:
         raise ValueError(f'Dataname {dataname} is unsupported')

@@ -14,6 +14,7 @@ from simvp.methods import method_maps
 from simvp.utils import (set_seed, print_log, output_namespace, check_dir,
                          get_dataset, measure_throughput, weights_to_cpu)
 
+import pdb
 try:
     import nni
     has_nni = True
