@@ -33,6 +33,7 @@ class SimVP_Model(nn.Module):
                 mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
 
     def forward(self, x_raw):
+        pdb.set_trace()
         B, T, C, H, W = x_raw.shape
         x = x_raw.view(B*T, C, H, W)
 

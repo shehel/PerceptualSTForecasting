@@ -45,6 +45,8 @@ class T4CDataset(Dataset):
         self.root_dir = root_dir
         self.file_filter = file_filter
         self.test = test
+        self.mean = 0
+        self.std = 1
 
         if self.file_filter is None:
             self.file_filter = "**/training/*8ch.h5"
@@ -127,7 +129,7 @@ def load_data(batch_size, val_batch_size, data_root,
     test_set._load_dataset()
 
     
-    test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+    test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
     test_set.len = 240
     dataloader_train = torch.utils.data.DataLoader(train_set,
                                                    batch_size=batch_size, shuffle=True,
