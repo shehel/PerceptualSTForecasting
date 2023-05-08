@@ -15,4 +15,4 @@ filter_size = 5
 stride = 1
 patch_size = 2
 layer_norm = 0
-decouple_beta = 0.1
+decouple_beta = 0.01
