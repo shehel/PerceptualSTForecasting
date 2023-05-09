@@ -40,13 +40,17 @@ class T4CDataset(Dataset):
     def __init__(self, 
                  root_dir: str,
                  file_filter: str = None,
-                 test:bool = False
+                 test:bool = False,
+                 pre_seq_length: int = 12,
+                 aft_seq_length: int = 1,
                  ):
         self.root_dir = root_dir
         self.file_filter = file_filter
-        self.test = test
+        self.pre_seq_length = pre_seq_length
+        self.aft_seq_length = aft_seq_length
         self.mean = 0
         self.std = 1
+        self.test = test
 
         if self.file_filter is None:
             self.file_filter = "**/training/*8ch.h5"
@@ -79,11 +83,11 @@ class T4CDataset(Dataset):
         start_hour = idx % MAX_TEST_SLOT_INDEX
 
         
-        two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + 12 * 2 + 1))
+        two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
         if self.test:
-            random_int_x = 10
+            random_int_x = 10#
             random_int_y = 40
         else:
             random_int_x = random.randint(0, 300)
@@ -92,10 +96,12 @@ class T4CDataset(Dataset):
                     random_int_y:random_int_y+128, ]
 
         #input_data, output_data = prepare_test(two_hours)
-        dynamic_input, output_data = two_hours[:12], two_hours[12:13]
+    
+        dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
         #print (dynamic_input[:, 123-10, 61-40, 5])
         #print (output_data[:,123-10, 61-40, 5])
 
+        # channels selection
         output_data = output_data[:,1::2,:,:]
 
         return dynamic_input, output_data 
@@ -111,8 +117,8 @@ def train_collate_fn(batch):
     return dynamic_input_batch, target_batch
 
 def load_data(batch_size, val_batch_size, data_root,
-              num_workers=0):
-
+              num_workers=0, pre_seq_length=None, aft_seq_length=None,
+              in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
     data_root = "7daysv2"
     try:
         data_root = Dataset.get(dataset_project="t4c", dataset_name=data_root).get_local_copy()
@@ -120,9 +126,9 @@ def load_data(batch_size, val_batch_size, data_root,
         print("Could not find dataset in clearml server. Exiting!")
     train_filter = "**/training/*8ch.h5"
     val_filter = "**/validation/*8ch.h5"
-    train_set = T4CDataset(data_root, train_filter)
-    val_set = T4CDataset(data_root, val_filter)
-    test_set = T4CDataset(data_root, val_filter, test=True)
+    train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length)
+    val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length)
+    test_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
 
     train_set._load_dataset()
     val_set._load_dataset()
@@ -149,3 +155,19 @@ def load_data(batch_size, val_batch_size, data_root,
                                                   collate_fn = train_collate_fn)
 
     return dataloader_train, dataloader_vali, dataloader_test
+
+if __name__ == '__main__':
+    dataloader_train, _, dataloader_test = \
+        load_data(batch_size=4,
+                  val_batch_size=4,
+                  data_root='7daysv2',
+                  num_workers=4,
+                  pre_seq_length=12, aft_seq_length=1)
+
+    print(len(dataloader_train), len(dataloader_test))
+    for item in dataloader_train:
+        print(item[0].shape, item[1].shape)
+        break
+    for item in dataloader_test:
+        print(item[0].shape, item[1].shape)
+        break

@@ -8,26 +8,26 @@ def rescale(x):
 
 def MAE(pred, true, spatial_norm=False):
     if not spatial_norm:
-        return np.mean(np.abs(pred-true), axis=(0, 1)).sum()
+        return np.mean(np.abs(pred-true), axis=(0, 1)).mean()
     else:
         norm = pred.shape[-1] * pred.shape[-2] * pred.shape[-3]
-        return np.mean(np.abs(pred-true) / norm, axis=(0, 1)).sum()
+        return np.mean(np.abs(pred-true) / norm, axis=(0, 1)).mean()
 
 
 def MSE(pred, true, spatial_norm=False):
     if not spatial_norm:
-        return np.mean((pred-true)**2, axis=(0, 1)).sum()
+        return np.mean((pred-true)**2, axis=(0, 1)).mean()
     else:
         norm = pred.shape[-1] * pred.shape[-2] * pred.shape[-3]
-        return np.mean((pred-true)**2 / norm, axis=(0, 1)).sum()
+        return np.mean((pred-true)**2 / norm, axis=(0, 1)).mean()
 
 
 def RMSE(pred, true, spatial_norm=False):
     if not spatial_norm:
-        return np.sqrt(np.mean((pred-true)**2, axis=(0, 1)).sum())
+        return np.sqrt(np.mean((pred-true)**2, axis=(0, 1)).mean())
     else:
         norm = pred.shape[-1] * pred.shape[-2] * pred.shape[-3]
-        return np.sqrt(np.mean((pred-true)**2 / norm, axis=(0, 1)).sum())
+        return np.sqrt(np.mean((pred-true)**2 / norm, axis=(0, 1)).mean())
 
 
 # cite the `PSNR` code from E3d-LSTM, Thanks!

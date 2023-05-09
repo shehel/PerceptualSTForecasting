@@ -1,5 +1,5 @@
 # Copyright (c) CAIRI AI Lab. All rights reserved
-
+import pdb
 def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, dist=False, **kwargs):
     cfg_dataloader = dict(
         pre_seq_length=kwargs.get('pre_seq_length', 10),
@@ -9,7 +9,6 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, dist
         use_augment=kwargs.get('use_augment', False),
         use_prefetcher=kwargs.get('use_prefetcher', False),
     )
-
     if dataname == 'human':
         from .dataloader_human import load_data
         return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
@@ -25,6 +24,9 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, dist
     elif dataname == 'taxibj':
         from .dataloader_taxibj import load_data
         return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
+    elif dataname == 't4c':
+        from .dataloader_t4c import load_data
+        return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
     elif 'weather' in dataname:  # 'weather', 'weather_t2m', etc.
         from .dataloader_weather import load_data
         data_split_pool = ['5_625', '2_8125', '1_40625']
@@ -35,4 +37,5 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, dist
         return load_data(batch_size, val_batch_size, data_root, num_workers,
                          distributed=dist, data_split=data_split, **kwargs)
     else:
+        print (dataname)
         raise ValueError(f'Dataname {dataname} is unsupported')
