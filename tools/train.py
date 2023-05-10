@@ -14,10 +14,13 @@ try:
     has_nni = True
 except ImportError: 
     has_nni = False
-
+import torch
 
 if __name__ == '__main__':
-    args = create_parser().parse_args()
+    parser = create_parser()
+    parser.add_argument("--local-rank", type=int)
+    args = parser.parse_args()
+    torch.cuda.set_device(args.local_rank)
     config = args.__dict__
 
     if has_nni:
@@ -28,12 +31,11 @@ if __name__ == '__main__':
         if args.config_file is None else args.config_file
     if args.overwrite:
         config = update_config(config, load_config(cfg_path),
-                               exclude_keys=['method'])
+                               exclude_keys=['method', 'data_root'])
     else:
         config = update_config(config, load_config(cfg_path),
                                exclude_keys=['method', 'batch_size', 'val_batch_size', 'sched',
-                                             'drop_path', 'warmup_epoch'])
-
+                                             'drop_path', 'warmup_epoch', 'data_root'])
     # set multi-process settings
     setup_multi_processes(config)
 

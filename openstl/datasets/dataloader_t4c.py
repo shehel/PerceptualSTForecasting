@@ -119,7 +119,6 @@ def train_collate_fn(batch):
 def load_data(batch_size, val_batch_size, data_root,
               num_workers=0, pre_seq_length=None, aft_seq_length=None,
               in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
-    data_root = "7daysv2"
     try:
         data_root = Dataset.get(dataset_project="t4c", dataset_name=data_root).get_local_copy()
     except:

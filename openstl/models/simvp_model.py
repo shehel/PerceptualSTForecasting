@@ -1,7 +1,6 @@
 import torch
 from torch import nn
-import pdb
-from simvp.modules import (ConvSC, ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
+from openstl.modules import (ConvSC, ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                            HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
                            SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock)
 

@@ -24,7 +24,7 @@ if __name__ == '__main__':
 
     assert args.config_file is not None, "Config file is required for testing"
     config = update_config(config, load_config(args.config_file),
-                           exclude_keys=['method', 'batch_size', 'val_batch_size'])
+                           exclude_keys=['method', 'batch_size', 'val_batch_size', 'data_root'])
     config['test'] = True
 
     # set multi-process settings

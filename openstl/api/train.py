@@ -341,10 +341,13 @@ class BaseExperiment(object):
         inputs, trues, preds = self.method.test_one_epoch(self, self.test_loader)
         self.call_hook('after_val_epoch')
 
+        trues = trues[:,:,1:2, 62-10,92-40]
+        preds=  preds[:,:,1:2, 62-10,92-40]
+
         if 'weather' in self.args.dataname:
             metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
         else:
-            metric_list, spatial_norm = ['mse', 'mae', 'ssim', 'psnr'], False
+            metric_list, spatial_norm = ['mse', 'mae'], False
         eval_res, eval_log = metric(preds, trues, self.test_loader.dataset.mean, self.test_loader.dataset.std,
                                     metrics=metric_list, spatial_norm=spatial_norm)
         metrics = np.array([eval_res['mae'], eval_res['mse']])
