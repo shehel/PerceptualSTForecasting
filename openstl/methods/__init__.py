@@ -10,6 +10,7 @@ from .predrnn import PredRNN
 from .predrnnpp import PredRNNpp
 from .predrnnv2 import PredRNNv2
 from .simvp import SimVP
+from .unet import UNet
 
 method_maps = {
     'convlstm': ConvLSTM,
@@ -22,9 +23,10 @@ method_maps = {
     'predrnnpp': PredRNNpp,
     'predrnnv2': PredRNNv2,
     'simvp': SimVP,
+    'unet': UNet
 }
 
 __all__ = [
     'method_maps', 'ConvLSTM', 'CrevNet', 'E3DLSTM', 'MAU', 'MIM',
-    'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'SimVP',
+    'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'SimVP', 'UNet'
 ]

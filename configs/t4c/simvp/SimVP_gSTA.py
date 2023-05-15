@@ -12,3 +12,4 @@ drop_path = 0.1
 root_dir = "7days"
 data_root = "7days"
 workers = 4
+epochs = 200

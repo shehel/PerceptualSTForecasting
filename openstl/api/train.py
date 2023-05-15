@@ -239,7 +239,7 @@ class BaseExperiment(object):
     def display_method_info(self):
         """Plot the basic infomation of supported methods"""
         T, C, H, W = self.args.in_shape
-        if self.args.method == 'simvp':
+        if self.args.method in ['simvp','unet'] :
             input_dummy = torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device)
         elif self.args.method == 'crevnet':
             # crevnet must use the batchsize rather than 1

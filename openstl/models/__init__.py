@@ -10,8 +10,9 @@ from .predrnn_model import PredRNN_Model
 from .predrnnpp_model import PredRNNpp_Model
 from .predrnnv2_model import PredRNNv2_Model
 from .simvp_model import SimVP_Model
+from .unet_model import UNet_Model
 
 __all__ = [
     'ConvLSTM_Model', 'CrevNet_Model', 'E3DLSTM_Model', 'MAU_Model', 'MIM_Model',
-    'PhyDNet_Model', 'PredRNN_Model', 'PredRNNpp_Model', 'PredRNNv2_Model', 'SimVP_Model'
+    'PhyDNet_Model', 'PredRNN_Model', 'PredRNNpp_Model', 'PredRNNv2_Model', 'SimVP_Model', 'UNet_Model'
 ]
