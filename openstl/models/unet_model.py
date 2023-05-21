@@ -23,6 +23,7 @@ class UNet_Model(nn.Module):
         assert up_mode in ("upconv", "upsample")
         self.padding = padding
         self.depth = depth
+        self.in_channels = in_channels
         prev_channels = in_channels
 
         if pos_emb:
@@ -34,6 +35,8 @@ class UNet_Model(nn.Module):
             self.down_path.append(UNetConvBlock(prev_channels, 2 ** (wf + i), padding, batch_norm, time_emb_dim=6 if pos_emb else None))
             prev_channels = 2 ** (wf + i)
 
+    
+
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
             self.up_path.append(UNetUpBlock(prev_channels, 2 ** (wf + i), up_mode, padding, batch_norm, time_emb_dim=6 if pos_emb else None))
@@ -42,7 +45,8 @@ class UNet_Model(nn.Module):
         self.last = nn.Conv2d(prev_channels, out_channels, kernel_size=1)
 
     def forward(self, x, *args, **kwargs):
-        x = x.reshape(-1, 96, 128,128)
+        _, _, _, H, W = x.shape
+        x = x.reshape(-1, self.in_channels, H,W)
 
         t = self.pos_model(t) if exists(self.pos_model) else None
         blocks = []
