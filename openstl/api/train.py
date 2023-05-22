@@ -17,7 +17,7 @@ from openstl.methods import method_maps
 from openstl.utils import (set_seed, print_log, output_namespace, check_dir, collect_env,
                            init_dist, init_random_seed,
                            get_dataset, get_dist_info, measure_throughput, weights_to_cpu)
-
+from clearml import Task, OutputModel
 try:
     import nni
     has_nni = True
@@ -28,8 +28,9 @@ import pdb
 class BaseExperiment(object):
     """The basic class of PyTorch training and evaluation."""
 
-    def __init__(self, args):
+    def __init__(self, args, task):
         """Initialize experiments (non-dist as an example)"""
+        self.task = task
         self.args = args
         self.config = self.args.__dict__
         self.device = self.args.device
@@ -281,6 +282,8 @@ class BaseExperiment(object):
         num_updates = self._epoch * self.steps_per_epoch
         self.call_hook('before_train_epoch')
 
+        logger = self.task.get_logger()
+
         eta = 1.0  # PredRNN variants
         for epoch in range(self._epoch, self._max_epochs):
             if self._dist and hasattr(self.train_loader.sampler, 'set_epoch'):
@@ -297,8 +300,14 @@ class BaseExperiment(object):
                     vali_loss = self.vali(self.vali_loader)
 
                 if self._rank == 0:
+
                     print_log('Epoch: {0}, Steps: {1} | Lr: {2:.7f} | Train Loss: {3:.7f} | Vali Loss: {4:.7f}\n'.format(
                         epoch + 1, len(self.train_loader), cur_lr, loss_mean.avg, vali_loss))
+                    logger.report_scalar(title='Training Report', 
+                        series='Train Loss', value=loss_mean.avg, iteration=epoch)
+                    logger.report_scalar(title='Training Report', 
+                        series='Val Loss', value=vali_loss, iteration=epoch)
+
                     recorder(vali_loss, self.method.model, self.path)
                     self._save(name='latest')
             if self._use_gpu and self.args.empty_cache:
@@ -307,7 +316,10 @@ class BaseExperiment(object):
         if not check_dir(self.path):  # exit training when work_dir is removed
             assert False and "Exit training because work_dir is removed"
         best_model_path = osp.join(self.path, 'checkpoint.pth')
+        latest_model_path = osp.join(self.path, 'checkpoints/latest.pth')
         self._load_from_state_dict(torch.load(best_model_path))
+        self.task.upload_artifact(artifact_object=best_model_path, name='best_model_weights')
+        self.task.upload_artifact(artifact_object=latest_model_path, name='latest_model_weights')
         time.sleep(1)  # wait for some hooks like loggers to finish
         self.call_hook('after_run')
 
@@ -322,6 +334,7 @@ class BaseExperiment(object):
                 metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
             else:
                 metric_list, spatial_norm = ['mse', 'mae'], False
+            
             eval_res, eval_log = metric(preds, trues, vali_loader.dataset.mean, vali_loader.dataset.std,
                                         metrics=metric_list, spatial_norm=spatial_norm)
 
@@ -342,15 +355,15 @@ class BaseExperiment(object):
         self.call_hook('after_val_epoch')
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
-        inp_sum = inputs[:,:,1::2].sum(axis=1, keepdims=True)
-        mask = (inp_sum > 0).astype(np.float32)
+        #inp_sum = inputs[:,:,1::2].sum(axis=1, keepdims=True)
+        #mask = (inp_sum > 0).astype(np.float32)
         
         
-        trues = trues[:,:,2:3]#, 62-10,92-40]
+        #trues = trues[:,:,2:3]#, 62-10,92-40]
         #trues = trues[:,:,1:2, 62-10,92-40]
         # multiply mask by preds
         #preds = preds * mask
-        preds=  preds[:,:,2:3]#, 62-10,92-40]
+        #preds=  preds[:,:,2:3]#, 62-10,92-40]
         #preds=  preds[:,:,1:2, 62-10,92-40]
 
         if 'weather' in self.args.dataname:

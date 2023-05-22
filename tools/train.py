@@ -2,7 +2,7 @@
 
 import os.path as osp
 import warnings
-import pdb
+from clearml import Task
 warnings.filterwarnings('ignore')
 
 from openstl.api import BaseExperiment
@@ -17,6 +17,7 @@ except ImportError:
 import torch
 
 if __name__ == '__main__':
+
     parser = create_parser()
     parser.add_argument("--local-rank", type=int)
     args = parser.parse_args()
@@ -36,11 +37,14 @@ if __name__ == '__main__':
         config = update_config(config, load_config(cfg_path),
                                exclude_keys=['method', 'batch_size', 'val_batch_size', 'sched',
                                              'drop_path', 'warmup_epoch', 'data_root'])
+
+    task = Task.init(project_name='simvp', task_name='unet_cleaml_test')
+    task.connect_configuration(config)
     # set multi-process settings
     setup_multi_processes(config)
 
     print('>'*35 + ' training ' + '<'*35)
-    exp = BaseExperiment(args)
+    exp = BaseExperiment(args, task)
     rank, _ = get_dist_info()
     exp.train()
 
