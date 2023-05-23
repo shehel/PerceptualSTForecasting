@@ -22,6 +22,7 @@ class SimVP_Model(nn.Module):
 
         self.enc = Encoder(C, hid_S, N_S, spatio_kernel_enc)
         self.dec = Decoder(hid_S, C-4, N_S, spatio_kernel_dec)
+        #self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec)
 
         model_type = 'gsta' if model_type is None else model_type.lower()
         if model_type == 'incepu':
@@ -44,6 +45,7 @@ class SimVP_Model(nn.Module):
 
         Y = self.dec(hid, skip)
         Y = Y.reshape(B, T, C-4, H, W)
+        #Y = Y.reshape(B, T, C, H, W)
 
         return Y
 

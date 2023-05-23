@@ -28,7 +28,7 @@ if __name__ == '__main__':
                            exclude_keys=['method', 'batch_size', 'val_batch_size', 'data_root'])
     config['test'] = True
 
-    task = Task.init(project_name='simvp/test', task_name='initial test')
+    task = Task.init(project_name='simvp/test', task_name=config['ex_name']+"_test")
     task.connect_configuration(config)
     # set multi-process settings
     setup_multi_processes(config)

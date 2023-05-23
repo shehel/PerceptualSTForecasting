@@ -21,7 +21,6 @@ if __name__ == '__main__':
     parser = create_parser()
     parser.add_argument("--local-rank", type=int)
     args = parser.parse_args()
-    torch.cuda.set_device(args.local_rank)
     config = args.__dict__
 
     if has_nni:
@@ -38,9 +37,11 @@ if __name__ == '__main__':
                                exclude_keys=['method', 'batch_size', 'val_batch_size', 'sched',
                                              'drop_path', 'warmup_epoch', 'data_root'])
 
-    task = Task.init(project_name='simvp', task_name='unet_cleaml_test')
+    task = Task.init(project_name='simvp', task_name=config['ex_name'])
     task.connect_configuration(config)
     # set multi-process settings
+
+    torch.cuda.set_device(args.local_rank)
     setup_multi_processes(config)
 
     print('>'*35 + ' training ' + '<'*35)

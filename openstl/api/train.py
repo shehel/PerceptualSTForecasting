@@ -355,16 +355,16 @@ class BaseExperiment(object):
         self.call_hook('after_val_epoch')
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
-        #inp_sum = inputs[:,:,1::2].sum(axis=1, keepdims=True)
-        #mask = (inp_sum > 0).astype(np.float32)
+        inp_sum = inputs[:,:,1::2].sum(axis=1, keepdims=True)
+        mask = (inp_sum > 0).astype(np.float32)
         
         
         #trues = trues[:,:,2:3]#, 62-10,92-40]
-        #trues = trues[:,:,1:2, 62-10,92-40]
+        trues = trues[:,:,1:2]# 62-10,92-40]
         # multiply mask by preds
-        #preds = preds * mask
+        preds = preds * mask
         #preds=  preds[:,:,2:3]#, 62-10,92-40]
-        #preds=  preds[:,:,1:2, 62-10,92-40]
+        preds=  preds[:,:,1:2]#, 62-10,92-40]
 
         if 'weather' in self.args.dataname:
             metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
