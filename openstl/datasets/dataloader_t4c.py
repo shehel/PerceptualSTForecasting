@@ -87,8 +87,8 @@ class T4CDataset(Dataset):
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
         if self.test:
-            random_int_x = 193#
-            random_int_y = 154
+            random_int_x = 10#
+            random_int_y = 40
         else:
             random_int_x = random.randint(0, 300)
             random_int_y = random.randint(0, 300)
@@ -102,7 +102,7 @@ class T4CDataset(Dataset):
         #print (output_data[:,123-10, 61-40, 5])
 
         # channels selection
-        output_data = output_data[:,1::2,:,:]
+        output_data = output_data[:,0::2,:,:]
 
         return dynamic_input, output_data 
 
@@ -135,8 +135,8 @@ def load_data(batch_size, val_batch_size, data_root,
     test_set._load_dataset()
 
     
-    # test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
-    test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+    test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
     #test_set.file_list = [Path('/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
     test_set.len = 240
     dataloader_train = torch.utils.data.DataLoader(train_set,

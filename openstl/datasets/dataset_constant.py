@@ -22,8 +22,8 @@ dataset_parameters = {
     't4c': {
         'in_shape': [12, 8, 128, 128],
         'pre_seq_length': 12,
-        'aft_seq_length': 1,
-        'total_length': 13
+        'aft_seq_length': 6,
+        'total_length': 18
     },
 
     'human': {

@@ -16,7 +16,7 @@ class UNet_Model(nn.Module):
     """
 
     def __init__(
-        self, in_channels=1, out_channels=2, depth=5, wf=6, padding=False, batch_norm=False, up_mode="upconv",
+        self, in_channels=1, out_ts=1, out_ch=4, depth=5, wf=6, padding=False, batch_norm=False, up_mode="upconv",
         pos_emb=False, **kwargs
     ):
         super(UNet_Model, self).__init__()
@@ -25,6 +25,8 @@ class UNet_Model(nn.Module):
         self.depth = depth
         self.in_channels = in_channels
         prev_channels = in_channels
+        self.out_ts = out_ts
+        self.out_ch = out_ch
 
         if pos_emb:
             self.pos_model = Date2Vec()
@@ -42,10 +44,10 @@ class UNet_Model(nn.Module):
             self.up_path.append(UNetUpBlock(prev_channels, 2 ** (wf + i), up_mode, padding, batch_norm, time_emb_dim=6 if pos_emb else None))
             prev_channels = 2 ** (wf + i)
 
-        self.last = nn.Conv2d(prev_channels, out_channels, kernel_size=1)
+        self.last = nn.Conv2d(prev_channels, out_ts*out_ch, kernel_size=1)
 
     def forward(self, x, *args, **kwargs):
-        _, _, _, H, W = x.shape
+        B, _, _, H, W = x.shape
         x = x.reshape(-1, self.in_channels, H,W)
 
         t = self.pos_model(t) if exists(self.pos_model) else None
@@ -64,6 +66,7 @@ class UNet_Model(nn.Module):
         x=self.last(x)
         # add an empty dimension at first axis
         x = torch.unsqueeze(x, 1)
+        x = x.reshape(B, self.out_ts, self.out_ch, H, W)
         return x
 
 # helper functions

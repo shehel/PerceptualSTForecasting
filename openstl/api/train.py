@@ -351,10 +351,11 @@ class BaseExperiment(object):
             self._load_from_state_dict(torch.load(best_model_path))
 
         self.call_hook('before_val_epoch')
-        inputs, trues, preds = self.method.test_one_epoch(self, self.test_loader)
+        inputs, preds, trues = self.method.test_one_epoch(self, self.test_loader)
         self.call_hook('after_val_epoch')
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
+        
         inp_sum = inputs[:,:,1::2].sum(axis=1, keepdims=True)
         mask = (inp_sum > 0).astype(np.float32)
         
