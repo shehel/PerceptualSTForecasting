@@ -2,8 +2,10 @@ import torch
 from torch import nn
 from openstl.modules import (ConvSC, ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                            HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
-                           SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock)
+                           SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock, UNetConvBlock,
+                           UNetUpBlock)
 
+import pdb
 
 class SimVP_Model(nn.Module):
     r"""SimVP Model
@@ -27,6 +29,8 @@ class SimVP_Model(nn.Module):
         model_type = 'gsta' if model_type is None else model_type.lower()
         if model_type == 'incepu':
             self.hid = MidIncepNet(T*hid_S, hid_T, N_T)
+        elif model_type == 'unet':
+            self.hid = UnetNet(T*hid_S, hid_T, N_T)
         else:
             self.hid = MidMetaNet(T*hid_S, hid_T, N_T,
                 input_resolution=(H, W), model_type=model_type,
@@ -48,13 +52,11 @@ class SimVP_Model(nn.Module):
         #Y = Y.reshape(B, T, C, H, W)
 
         return Y
-
-
+    
 def sampling_generator(N, reverse=False):
     samplings = [False, True] * (N // 2)
     if reverse: return list(reversed(samplings[:N]))
     else: return samplings[:N]
-
 
 class Encoder(nn.Module):
     """3D Encoder for SimVP"""
@@ -144,6 +146,54 @@ class MidIncepNet(nn.Module):
         y = z.reshape(B, T, C, H, W)
         return y
 
+class UnetNet(nn.Module):
+    r"""SimVP Model
+
+    Implementation of `SimVP: Simpler yet Better Video Prediction
+    <https://arxiv.org/abs/2206.05099>`_.
+
+    """
+
+    def __init__(
+        self, in_channels=1, depth=5, wf=6, padding=False, batch_norm=False, up_mode="upconv",
+        **kwargs
+    ):
+        super(UnetNet, self).__init__()
+        assert up_mode in ("upconv", "upsample")
+        self.padding = padding
+        self.depth = depth
+        self.in_channels = in_channels
+        prev_channels = in_channels
+
+        self.down_path = nn.ModuleList()
+        for i in range(depth):
+            self.down_path.append(UNetConvBlock(prev_channels, 512/(i+1), padding, batch_norm,))
+            prev_channels = 2 ** (wf + i)
+
+        self.up_path = nn.ModuleList()
+        for i in reversed(range(depth - 1)):
+            self.up_path.append(UNetUpBlock(prev_channels, , up_mode, padding, batch_norm))
+            prev_channels = 2 ** (wf + i)
+
+        self.last = nn.Conv2d(prev_channels, in_channels, kernel_size=1)
+
+    def forward(self, x, *args, **kwargs):
+        B, T, C, H, W = x.shape
+        x = x.reshape(B, T*C, H,W)
+
+        blocks = []
+        for i, down in enumerate(self.down_path):
+            x = down(x)
+            if i != len(self.down_path) - 1:
+                blocks.append(x)
+                x = torch.nn.functional.max_pool2d(x, 2)
+
+        for i, up in enumerate(self.up_path):
+            x = up(x, blocks[-i - 1])
+        x=self.last(x)
+        # add an empty dimension at first axis
+        x = x.reshape(B, T, C, H, W)
+        return x
 
 class MetaBlock(nn.Module):
     """The hidden Translator of MetaFormer for SimVP"""

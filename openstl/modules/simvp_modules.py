@@ -541,3 +541,56 @@ class ViTSubBlock(ViTBlock):
         x = x + self.drop_path(self.attn(self.norm1(x)))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
         return x.reshape(B, H, W, C).permute(0, 3, 1, 2)
+
+class Block(nn.Module):
+    def __init__(self, dim, dim_out):
+        super().__init__()
+        self.proj = nn.Conv2d(dim, dim_out, kernel_size=3, padding=1)
+        self.act = nn.ReLU()
+        self.norm = nn.BatchNorm2d(dim_out)
+
+    def forward(self, x):
+        x = self.proj(x)
+        x = self.norm(x)
+        return self.act(x)
+
+class UNetConvBlock(nn.Module):
+    def __init__(self, in_size, out_size, padding, batch_norm):
+        super(UNetConvBlock, self).__init__()
+        
+        self.block1 = Block(in_size, out_size)
+        self.block2 = Block(out_size, out_size)
+        self.res_conv = nn.Conv2d(in_size, out_size, 1) if in_size != out_size else nn.Identity()
+
+
+    def forward(self, x):  # noqa
+        out = self.block1(x)
+        out = self.block2(out)
+
+        return out + self.res_conv(x)
+
+class UNetUpBlock(nn.Module):
+    def __init__(self, in_size, out_size, up_mode, padding, batch_norm):
+        super(UNetUpBlock, self).__init__()
+        if up_mode == "upconv":
+            self.up = nn.ConvTranspose2d(in_size, out_size, kernel_size=2, stride=2)
+        elif up_mode == "upsample":
+            self.up = nn.Sequential(nn.Upsample(mode="bilinear", scale_factor=2), nn.Conv2d(in_size, out_size, kernel_size=1),)
+
+        self.conv_block = UNetConvBlock(in_size, out_size, padding, batch_norm)
+
+    def center_crop(self, layer, target_size):
+        _, _, layer_height, layer_width = layer.size()
+        diff_y = (layer_height - target_size[0]) // 2
+        diff_x = (layer_width - target_size[1]) // 2
+        diff_y_target_size_ = diff_y + target_size[0]
+        diff_x_target_size_ = diff_x + target_size[1]
+        return layer[:, :, diff_y:diff_y_target_size_, diff_x:diff_x_target_size_]
+
+    def forward(self, x, bridge):  # noqa
+        up = self.up(x)
+        crop1 = self.center_crop(bridge, up.shape[2:])
+        out = torch.cat([up, crop1], 1)
+        out = self.conv_block(out)
+
+        return out
