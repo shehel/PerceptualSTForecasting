@@ -11,6 +11,7 @@ from timm.models.vision_transformer import Block as ViTBlock
 from .layers import (HorBlock, ChannelAggregationFFN, MultiOrderGatedAggregation,
                      PoolFormerBlock, CBlock, SABlock, MixMlp, VANBlock)
 
+import pdb
 
 class BasicConv2d(nn.Module):
 
@@ -577,7 +578,7 @@ class UNetUpBlock(nn.Module):
         elif up_mode == "upsample":
             self.up = nn.Sequential(nn.Upsample(mode="bilinear", scale_factor=2), nn.Conv2d(in_size, out_size, kernel_size=1),)
 
-        self.conv_block = UNetConvBlock(in_size, out_size, padding, batch_norm)
+        self.conv_block = UNetConvBlock(out_size*2, out_size, padding, batch_norm)
 
     def center_crop(self, layer, target_size):
         _, _, layer_height, layer_width = layer.size()

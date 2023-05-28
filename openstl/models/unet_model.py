@@ -172,6 +172,7 @@ class UNetUpBlock(nn.Module):
         up = self.up(x)
         crop1 = self.center_crop(bridge, up.shape[2:])
         out = torch.cat([up, crop1], 1)
+        pdb.set_trace()
         out = self.conv_block(out, time_emb)
 
         return out

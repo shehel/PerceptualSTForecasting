@@ -30,7 +30,7 @@ class SimVP_Model(nn.Module):
         if model_type == 'incepu':
             self.hid = MidIncepNet(T*hid_S, hid_T, N_T)
         elif model_type == 'unet':
-            self.hid = UnetNet(T*hid_S, hid_T, N_T)
+            self.hid = UnetNet(T*hid_S, N_T, hid_T)
         else:
             self.hid = MidMetaNet(T*hid_S, hid_T, N_T,
                 input_resolution=(H, W), model_type=model_type,
@@ -167,12 +167,13 @@ class UnetNet(nn.Module):
 
         self.down_path = nn.ModuleList()
         for i in range(depth):
-            self.down_path.append(UNetConvBlock(prev_channels, 512/(i+1), padding, batch_norm,))
-            prev_channels = 2 ** (wf + i)
+            self.down_path.append(UNetConvBlock(prev_channels, 2**(wf-i), padding, batch_norm,))
+            prev_channels = 2 ** (wf - i)
 
         self.up_path = nn.ModuleList()
+    
         for i in reversed(range(depth - 1)):
-            self.up_path.append(UNetUpBlock(prev_channels, , up_mode, padding, batch_norm))
+            self.up_path.append(UNetUpBlock(prev_channels, 2**(wf+i), up_mode, padding, batch_norm))
             prev_channels = 2 ** (wf + i)
 
         self.last = nn.Conv2d(prev_channels, in_channels, kernel_size=1)
@@ -187,7 +188,6 @@ class UnetNet(nn.Module):
             if i != len(self.down_path) - 1:
                 blocks.append(x)
                 x = torch.nn.functional.max_pool2d(x, 2)
-
         for i, up in enumerate(self.up_path):
             x = up(x, blocks[-i - 1])
         x=self.last(x)
