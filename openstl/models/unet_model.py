@@ -37,7 +37,8 @@ class UNet_Model(nn.Module):
             self.down_path.append(UNetConvBlock(prev_channels, 2 ** (wf + i), padding, batch_norm, time_emb_dim=6 if pos_emb else None))
             prev_channels = 2 ** (wf + i)
 
-    
+        #self.hid = MidMetaNet(256, 256, 3,
+        #        input_resolution=(32, 32), model_type="convsc")
 
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
@@ -60,7 +61,7 @@ class UNet_Model(nn.Module):
             if i != len(self.down_path) - 1:
                 blocks.append(x)
                 x = torch.nn.functional.max_pool2d(x, 2)
-
+        #x = self.hid(x)
         for i, up in enumerate(self.up_path):
             x = up(x, blocks[-i - 1])
         x=self.last(x)
@@ -172,10 +173,101 @@ class UNetUpBlock(nn.Module):
         up = self.up(x)
         crop1 = self.center_crop(bridge, up.shape[2:])
         out = torch.cat([up, crop1], 1)
-        pdb.set_trace()
         out = self.conv_block(out, time_emb)
 
         return out
 
 
  
+class MetaBlock(nn.Module):
+    """The hidden Translator of MetaFormer for SimVP"""
+
+    def __init__(self, in_channels, out_channels, input_resolution=None, model_type=None,
+                 mlp_ratio=8., drop=0.0, drop_path=0.0, layer_i=0):
+        super(MetaBlock, self).__init__()
+        self.in_channels = in_channels
+        self.out_channels = out_channels
+        model_type = model_type.lower() if model_type is not None else 'gsta'
+
+        if model_type == 'gsta':
+            self.block = GASubBlock(
+                in_channels, kernel_size=21, mlp_ratio=mlp_ratio,
+                drop=drop, drop_path=drop_path, act_layer=nn.GELU)
+        elif model_type == 'convmixer':
+            self.block = ConvMixerSubBlock(in_channels, kernel_size=11, activation=nn.GELU)
+        elif model_type == 'convsc':
+            self.block = ConvSC(in_channels, in_channels, kernel_size=3)   
+        elif model_type == 'convnext':
+            self.block = ConvNeXtSubBlock(
+                in_channels, mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+        elif model_type == 'hornet':
+            self.block = HorNetSubBlock(in_channels, mlp_ratio=mlp_ratio, drop_path=drop_path)
+        elif model_type == 'mlp':
+            self.block = MLPMixerSubBlock(
+                in_channels, input_resolution, mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+        elif model_type == 'moga':
+            self.block = MogaSubBlock(
+                in_channels, mlp_ratio=mlp_ratio, drop_rate=drop, drop_path_rate=drop_path)
+        elif model_type == 'poolformer':
+            self.block = PoolFormerSubBlock(
+                in_channels, mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+        elif model_type == 'swin':
+            self.block = SwinSubBlock(
+                in_channels, input_resolution, layer_i=layer_i, mlp_ratio=mlp_ratio,
+                drop=drop, drop_path=drop_path)
+        elif model_type == 'uniformer':
+            block_type = 'MHSA' if in_channels == out_channels and layer_i > 0 else 'Conv'
+            self.block = UniformerSubBlock(
+                in_channels, mlp_ratio=mlp_ratio, drop=drop,
+                drop_path=drop_path, block_type=block_type)
+        elif model_type == 'van':
+            self.block = VANSubBlock(
+                in_channels, mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path, act_layer=nn.GELU)
+        elif model_type == 'vit':
+            self.block = ViTSubBlock(
+                in_channels, mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+        else:
+            assert False and "Invalid model_type in SimVP"
+
+        if in_channels != out_channels:
+            self.reduction = nn.Conv2d(
+                in_channels, out_channels, kernel_size=1, stride=1, padding=0)
+
+    def forward(self, x):
+        z = self.block(x)
+        return z if self.in_channels == self.out_channels else self.reduction(z)
+
+
+class MidMetaNet(nn.Module):
+    """The hidden Translator of MetaFormer for SimVP"""
+
+    def __init__(self, channel_in, channel_hid, N2,
+                 input_resolution=None, model_type=None,
+                 mlp_ratio=4., drop=0.0, drop_path=0.1):
+        super(MidMetaNet, self).__init__()
+        assert N2 >= 2 and mlp_ratio > 1
+        self.N2 = N2
+        dpr = [  # stochastic depth decay rule
+            x.item() for x in torch.linspace(1e-2, drop_path, self.N2)]
+
+        # downsample
+        enc_layers = [MetaBlock(
+            channel_in, channel_hid, input_resolution, model_type,
+            mlp_ratio, drop, drop_path=dpr[0], layer_i=0)]
+        # middle layers
+        for i in range(1, N2-1):
+            enc_layers.append(MetaBlock(
+                channel_hid, channel_hid, input_resolution, model_type,
+                mlp_ratio, drop, drop_path=dpr[i], layer_i=i))
+        # upsample
+        enc_layers.append(MetaBlock(
+            channel_hid, channel_in, input_resolution, model_type,
+            mlp_ratio, drop, drop_path=drop_path, layer_i=N2-1))
+        self.enc = nn.Sequential(*enc_layers)
+
+    def forward(self, x):
+        z = x
+        for i in range(self.N2):
+            z = self.enc[i](z)
+
+        return z

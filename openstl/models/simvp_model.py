@@ -211,6 +211,8 @@ class MetaBlock(nn.Module):
                 drop=drop, drop_path=drop_path, act_layer=nn.GELU)
         elif model_type == 'convmixer':
             self.block = ConvMixerSubBlock(in_channels, kernel_size=11, activation=nn.GELU)
+        elif model_type == 'convsc':
+            self.block = ConvSC(in_channels, in_channels, kernel_size=3)   
         elif model_type == 'convnext':
             self.block = ConvNeXtSubBlock(
                 in_channels, mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
@@ -282,7 +284,6 @@ class MidMetaNet(nn.Module):
     def forward(self, x):
         B, T, C, H, W = x.shape
         x = x.reshape(B, T*C, H, W)
-
         z = x
         for i in range(self.N2):
             z = self.enc[i](z)

@@ -166,7 +166,6 @@ class Base_method(object):
             results = self._dist_forward_collect(vali_loader, len(vali_loader.dataset))
         else:
             results = self._nondist_forward_collect(vali_loader, len(vali_loader.dataset))
-
         preds = torch.tensor(results['preds'])
         trues = torch.tensor(results['trues'])
         losses_m = self.criterion(preds, trues).cpu().numpy()
