@@ -51,7 +51,11 @@ class T4CDataset(Dataset):
         self.mean = 0
         self.std = 1
         self.test = test
-
+        self.m = [0.1197112,  1.73881751, 0.11084138, 1.7988615,  0.1094989,  1.81207202, 0.10324037, 1.71015936]
+        self.s = [1.6551339 , 5.82894155, 1.54915965, 6.13199342, 1.51485388, 6.19980411, 1.47532519, 5.83794635]
+        # make self.mean and self.std so that it has the shape [None,None,:,None,None
+        self.m = np.array(self.m)[None,:,None,None]
+        self.s = np.array(self.s)[None,:,None,None] 
         if self.file_filter is None:
             self.file_filter = "**/training/*8ch.h5"
 
@@ -84,17 +88,24 @@ class T4CDataset(Dataset):
 
         
         two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
+        #two_hours = (two_hours - np.min(two_hours)) * (200 / (np.max(two_hours) - np.min(two_hours)))
+        #
+        #two_hours = (two_hours - two_hours.min()) / (two_hours.max() - two_hours.min())
+
+# Rescale values to be between 50 and 200
+        #two_hours = 0 + (two_hours * (20 - 0))
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
         if self.test:
-            random_int_x = 10#
-            random_int_y = 40
+            random_int_x = 255#
+            random_int_y = 124
         else:
-            random_int_x = random.randint(0, 300)
-            random_int_y = random.randint(0, 300)
+            random_int_x = 255#random.randint(0, 300)
+            random_int_y = 124#random.randint(0, 300)
         two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
                     random_int_y:random_int_y+128, ]
 
+        #two_hours = (two_hours - self.m) / self.s
         #input_data, output_data = prepare_test(two_hours)
     
         dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
@@ -135,8 +146,9 @@ def load_data(batch_size, val_batch_size, data_root,
     test_set._load_dataset()
 
     
-    test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
-    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+    test_set.file_list = [Path('/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5')]
     #test_set.file_list = [Path('/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
     test_set.len = 240
     dataloader_train = torch.utils.data.DataLoader(train_set,

@@ -138,3 +138,4 @@ configs_test/
 configs/kitticaltech/simvp
 configs/kth/simvp
 configs/human/simvp
+notebooks/viz.ipynb
