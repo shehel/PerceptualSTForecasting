@@ -139,3 +139,10 @@ configs/kitticaltech/simvp
 configs/kth/simvp
 configs/human/simvp
 notebooks/viz.ipynb
+mnist_test_seq.npy
+train-images-idx3-ubyte.gz
+notebooks/simunet.gif
+notebooks/true.gif
+notebooks/trues.gif
+notebooks/unet.gif
+notebooks/viz.ipynb
