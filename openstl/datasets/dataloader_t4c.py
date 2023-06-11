@@ -97,11 +97,11 @@ class T4CDataset(Dataset):
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
         if self.test:
-            random_int_x = 255#
-            random_int_y = 124
+            random_int_x = 10#255
+            random_int_y = 40#124
         else:
-            random_int_x = 255#random.randint(0, 300)
-            random_int_y = 124#random.randint(0, 300)
+            random_int_x = random.randint(0, 300)
+            random_int_y = random.randint(0, 300)
         two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
                     random_int_y:random_int_y+128, ]
 
@@ -113,7 +113,7 @@ class T4CDataset(Dataset):
         #print (output_data[:,123-10, 61-40, 5])
 
         # channels selection
-        output_data = output_data[:,0::2,:,:]
+        output_data = output_data[:,0::1,:,:]
 
         return dynamic_input, output_data 
 
@@ -132,13 +132,13 @@ def load_data(batch_size, val_batch_size, data_root,
               num_workers=0, pre_seq_length=None, aft_seq_length=None,
               in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
     try:
-        data_root = Dataset.get(dataset_project="t4c", dataset_name=data_root).get_local_copy()
+        data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
     train_filter = "**/training/*8ch.h5"
     val_filter = "**/validation/*8ch.h5"
     train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length)
-    val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length)
+    val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
     test_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
 
     train_set._load_dataset()
@@ -147,9 +147,13 @@ def load_data(batch_size, val_batch_size, data_root,
 
     
     #test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
-    test_set.file_list = [Path('/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5')]
-    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5')]
+    #test_set.file_list = [Path('/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/ANTWERP/training/2020-04-25_ANTWERP_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/BERLIN/training/2019-06-25_BERLIN_8ch.h5')]
+    test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2020-06-25_MOSCOW_8ch.h5')]
     #test_set.file_list = [Path('/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+
     test_set.len = 240
     dataloader_train = torch.utils.data.DataLoader(train_set,
                                                    batch_size=batch_size, shuffle=True,
@@ -157,7 +161,7 @@ def load_data(batch_size, val_batch_size, data_root,
                                                    num_workers=num_workers,
                                                    collate_fn = train_collate_fn)
     dataloader_vali = torch.utils.data.DataLoader(val_set,
-                                                  batch_size=val_batch_size, shuffle=False,
+                                                  batch_size=val_batch_size, shuffle=True,
                                                   pin_memory=True, drop_last=True,
                                                   num_workers=num_workers,
                                                   collate_fn = train_collate_fn

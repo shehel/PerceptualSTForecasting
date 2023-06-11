@@ -1,5 +1,6 @@
 # Copyright (c) CAIRI AI Lab. All rights reserved
 
+import pdb
 import cv2
 import os
 import logging
@@ -14,6 +15,8 @@ from typing import Tuple
 
 import torch
 import torchvision
+from torch.nn import functional as F
+from torch import nn
 import torch.multiprocessing as mp
 from torch import distributed as dist
 
@@ -21,6 +24,29 @@ import openstl
 from .config_utils import Config
 
 
+class DifferentialDivergenceLoss(nn.Module):
+    def __init__(self, tau=0.1, epsilon=1e-8, lambda_reg=0.01):
+        super(DifferentialDivergenceLoss, self).__init__()
+        self.tau = tau
+        self.epsilon = epsilon
+        self.lambda_reg = lambda_reg
+
+    def forward(self, pred, true):
+        mse_loss = F.mse_loss(pred, true)
+
+        pred_diff = pred[:, 1:] - pred[:, :-1]
+        true_diff = true[:, 1:] - true[:, :-1]
+        pred_diff = pred_diff.view(pred_diff.shape[0], pred_diff.shape[1], -1)
+        true_diff = true_diff.reshape(true_diff.shape[0], true_diff.shape[1], -1)
+
+        pred_prob = F.softmax(pred_diff / self.tau, dim=2)
+        true_prob = F.softmax(true_diff / self.tau, dim=2)
+
+        reg_loss = torch.sum(pred_prob * torch.log((pred_prob + self.epsilon) / (true_prob + self.epsilon)))
+
+        total_loss = mse_loss + self.lambda_reg * reg_loss
+
+        return total_loss, mse_loss, self.lambda_reg*reg_loss
 def set_seed(seed, deterministic=False):
     """Set random seed.
 

@@ -1,6 +1,6 @@
 method = 'UNet'
 in_channels = 96
-out_ts = 6
+out_ts = 12
 out_ch = 4
 depth = 3
 wf = 6
@@ -11,7 +11,7 @@ up_mode = 'upconv'
 lr = 1e-3
 batch_size = 16
 drop_path = 0.1
-root_dir = "7days"
-data_root = "7days"
+root_dir = "7daysv4"
+data_root = "7daysv4"
 workers = 4
 epochs = 200

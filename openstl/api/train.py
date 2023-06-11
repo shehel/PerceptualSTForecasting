@@ -289,7 +289,7 @@ class BaseExperiment(object):
             if self._dist and hasattr(self.train_loader.sampler, 'set_epoch'):
                 self.train_loader.sampler.set_epoch(epoch)
 
-            num_updates, loss_mean, eta = self.method.train_one_epoch(self, self.train_loader,
+            num_updates, loss_mean, loss_mse, loss_reg, eta = self.method.train_one_epoch(self, self.train_loader,
                                                                       epoch, num_updates, eta)
 
             self._epoch = epoch
@@ -305,6 +305,11 @@ class BaseExperiment(object):
                         epoch + 1, len(self.train_loader), cur_lr, loss_mean.avg, vali_loss))
                     logger.report_scalar(title='Training Report', 
                         series='Train Loss', value=loss_mean.avg, iteration=epoch)
+                    logger.report_scalar(title='Training Report', 
+                        series='Train MSE Loss', value=loss_mse.avg, iteration=epoch)
+                    logger.report_scalar(title='Training Report', 
+                        series='Train Reg Loss', value=loss_reg.avg, iteration=epoch)
+
                     logger.report_scalar(title='Training Report', 
                         series='Val Loss', value=vali_loss, iteration=epoch)
 

@@ -37,8 +37,8 @@ class UNet_Model(nn.Module):
             self.down_path.append(UNetConvBlock(prev_channels, 2 ** (wf + i), padding, batch_norm, time_emb_dim=6 if pos_emb else None))
             prev_channels = 2 ** (wf + i)
 
-        #self.hid = MidMetaNet(256, 256, 3,
-        #       input_resolution=(32, 32), model_type="convsc")
+        self.hid = MidMetaNet(256, 256, 3,
+                 input_resolution=(32, 32), model_type="convsc")
 
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
@@ -61,13 +61,33 @@ class UNet_Model(nn.Module):
             if i != len(self.down_path) - 1:
                 blocks.append(x)
                 x = torch.nn.functional.max_pool2d(x, 2)
-        #x = self.hid(x)
+        
+        translated = self.hid(x)
+        # copy translated to x
+        x = translated
         for i, up in enumerate(self.up_path):
             x = up(x, blocks[-i - 1])
         x=self.last(x)
         # add an empty dimension at first axis
         x = torch.unsqueeze(x, 1)
         x = x.reshape(B, self.out_ts, self.out_ch, H, W)
+        return x, translated
+
+    def encode(self, x):
+        B, _, _, H, W = x.shape
+        x = x.reshape(-1, self.in_channels, H, W)
+
+        t = self.pos_model(t) if exists(self.pos_model) else None
+        blocks = []
+        for i, down in enumerate(self.down_path):
+            if i == 0:
+                x = down(x, t)
+            else:
+                x = down(x)
+            if i != len(self.down_path) - 1:
+                blocks.append(x)
+                x = torch.nn.functional.max_pool2d(x, 2)
+        
         return x
 
 # helper functions

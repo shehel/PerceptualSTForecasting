@@ -138,13 +138,14 @@ class Base_method(object):
         for i, (batch_x, batch_y) in enumerate(data_loader):
             with torch.no_grad():
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y = self._predict(batch_x, batch_y)
+                pred_y,_ = self._predict(batch_x, batch_y)
             results.append(dict(zip(['inputs', 'preds', 'trues'],
                                     [batch_x.cpu().numpy(), pred_y.cpu().numpy(), batch_y.cpu().numpy()])))
             prog_bar.update()
             if self.args.empty_cache:
                 torch.cuda.empty_cache()
-
+            if i==20:
+                break
         results_all = {}
         for k in results[0].keys():
             results_all[k] = np.concatenate(
@@ -167,8 +168,10 @@ class Base_method(object):
         else:
             results = self._nondist_forward_collect(vali_loader, len(vali_loader.dataset))
         preds = torch.tensor(results['preds'])
+        results['trues'] = results['trues'][:,:,0::2]
         trues = torch.tensor(results['trues'])
-        losses_m = self.criterion(preds, trues).cpu().numpy()
+        losses_m = self.criterion(preds, trues)
+        losses_m = losses_m.cpu().numpy()
         return results['preds'], results['trues'], losses_m
 
     def test_one_epoch(self, runner, test_loader, **kwargs):
