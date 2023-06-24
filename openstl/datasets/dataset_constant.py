@@ -23,7 +23,8 @@ dataset_parameters = {
         'in_shape': [12, 8, 128, 128],
         'pre_seq_length': 12,
         'aft_seq_length': 6,
-        'total_length': 18
+        'total_length': 18,
+        'perm_bool': True
     },
 
     'human': {

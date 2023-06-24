@@ -1,7 +1,7 @@
 method = 'UNet'
 in_channels = 96
 out_ts = 6
-out_ch = 4
+out_ch = 1
 depth = 5
 wf = 6
 padding = True
@@ -15,3 +15,4 @@ root_dir = "7daysv4"
 data_root = "7daysv4"
 workers = 4
 epochs = 200
+perm = True

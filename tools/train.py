@@ -8,7 +8,7 @@ warnings.filterwarnings('ignore')
 from openstl.api import BaseExperiment
 from openstl.utils import (create_parser, get_dist_info, load_config,
                            setup_multi_processes, update_config)
-
+import pdb
 try:
     import nni
     has_nni = True
@@ -31,12 +31,11 @@ if __name__ == '__main__':
         if args.config_file is None else args.config_file
     if args.overwrite:
         config = update_config(config, load_config(cfg_path),
-                               exclude_keys=['method', 'data_root'])
+                               exclude_keys=['method', 'data_root', 'perm'])
     else:
         config = update_config(config, load_config(cfg_path),
                                exclude_keys=['method', 'batch_size', 'val_batch_size', 'sched',
-                                             'drop_path', 'warmup_epoch', 'data_root'])
-
+                                             'drop_path', 'warmup_epoch', 'data_root', 'perm'])
     task = Task.init(project_name='simvp', task_name=config['ex_name'])
     task.connect_configuration(config)
     # set multi-process settings

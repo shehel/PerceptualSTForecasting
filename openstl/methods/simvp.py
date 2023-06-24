@@ -73,9 +73,9 @@ class SimVP(Base_method):
 
             with self.amp_autocast():
                 pred_y, translated = self._predict(batch_x)
-                encoded = self.model.encode(batch_y)
+                #encoded = self.model.encode(batch_y)
                 mse_loss = self.criterion(pred_y, batch_y[:,:,0::2])
-                reg_loss = self.criterion(translated, encoded)
+                reg_loss = torch.tensor(0) #self.criterion(translated, encoded)
                 loss = mse_loss + reg_loss
 
             if not self.dist:

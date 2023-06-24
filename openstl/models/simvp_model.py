@@ -23,7 +23,7 @@ class SimVP_Model(nn.Module):
         H, W = int(H / 2**(N_S/2)), int(W / 2**(N_S/2))  # downsample 1 / 2**(N_S/2)
 
         self.enc = Encoder(C, hid_S, N_S, spatio_kernel_enc)
-        self.dec = Decoder(hid_S, C-4, N_S, spatio_kernel_dec)
+        self.dec = Decoder(hid_S, C-7, N_S, spatio_kernel_dec)
         #self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec)
 
         model_type = 'gsta' if model_type is None else model_type.lower()
@@ -48,7 +48,7 @@ class SimVP_Model(nn.Module):
         hid = encoded.reshape(B*T, C_, H_, W_)
 
         Y = self.dec(hid, skip)
-        Y = Y.reshape(B, T, C-4, H, W)
+        Y = Y.reshape(B, T, C-7, H, W)
         #Y = Y.reshape(B, T, C, H, W)
 
         return (Y,encoded)

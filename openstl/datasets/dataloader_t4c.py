@@ -33,6 +33,12 @@ def load_h5_file(file_path, sl = None, to_torch = False) -> np.ndarray:
         return data
 
 MAX_TEST_SLOT_INDEX = 240
+perm = [[0,1,2,3,4,5,6,7],
+        [2,3,4,5,6,7,0,1],
+        [4,5,6,7,0,1,2,3],
+        [6,7,0,1,2,3,4,5]
+        ]
+
 
 class T4CDataset(Dataset):
     """Taxibj <https://arxiv.org/abs/1610.00081>`_ Dataset"""
@@ -43,11 +49,13 @@ class T4CDataset(Dataset):
                  test:bool = False,
                  pre_seq_length: int = 12,
                  aft_seq_length: int = 1,
+                 perm_bool = False,
                  ):
         self.root_dir = root_dir
         self.file_filter = file_filter
         self.pre_seq_length = pre_seq_length
         self.aft_seq_length = aft_seq_length
+        self.perm = perm_bool
         self.mean = 0
         self.std = 1
         self.test = test
@@ -105,6 +113,17 @@ class T4CDataset(Dataset):
         two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
                     random_int_y:random_int_y+128, ]
 
+        # if self.perm is boolean, then we permute the channels
+        # if self.perm is an integer, then we permute the channels
+        # and select the first self.perm channels
+        if type(self.perm) == bool:
+            if self.perm:
+                dir_sel = random.randint(0,3)
+                two_hours = two_hours[:,perm[dir_sel],:,:]
+        else:
+            two_hours = two_hours[:,perm[self.perm],:,:]
+            
+
         #two_hours = (two_hours - self.m) / self.s
         #input_data, output_data = prepare_test(two_hours)
     
@@ -114,6 +133,12 @@ class T4CDataset(Dataset):
 
         # channels selection
         output_data = output_data[:,0::1,:,:]
+
+        # if channels are permuted, the first channel is
+        # the one that is used for prediction as it 
+        # corresponds to the selected direction
+        if self.perm:
+            output_data = output_data[:,0:1,:,:]
 
         return dynamic_input, output_data 
 
@@ -130,16 +155,16 @@ def train_collate_fn(batch):
 
 def load_data(batch_size, val_batch_size, data_root,
               num_workers=0, pre_seq_length=None, aft_seq_length=None,
-              in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
+              in_shape=None, distributed=False, use_prefetcher=False,use_augment=False, perm_bool=False):
     try:
         data_root = Dataset.get(dataset_id="59b1fd80e3274676aeba314c832bbd85").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
     train_filter = "**/training/*8ch.h5"
     val_filter = "**/validation/*8ch.h5"
-    train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length)
-    val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
-    test_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
+    train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, perm_bool=perm_bool)
+    val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True, perm_bool=perm_bool)
+    test_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True, perm_bool=perm_bool)
 
     train_set._load_dataset()
     val_set._load_dataset()
