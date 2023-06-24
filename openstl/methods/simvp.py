@@ -30,9 +30,9 @@ class SimVP(Base_method):
     def _predict(self, batch_x, batch_y=None, **kwargs):
         """Forward the model"""
         if self.args.aft_seq_length == self.args.pre_seq_length:
-            pred_y = self.model(batch_x)
+            pred_y, translated = self.model(batch_x)
         elif self.args.aft_seq_length < self.args.pre_seq_length:
-            pred_y = self.model(batch_x)
+            pred_y, translated = self.model(batch_x)
             pred_y = pred_y[:, :self.args.aft_seq_length]
         elif self.args.aft_seq_length > self.args.pre_seq_length:
             pred_y = []
@@ -49,12 +49,14 @@ class SimVP(Base_method):
                 pred_y.append(cur_seq[:, :m])
             
             pred_y = torch.cat(pred_y, dim=1)
-        return pred_y
+        return pred_y, translated
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
         data_time_m = AverageMeter()
         losses_m = AverageMeter()
+        losses_mse_m = AverageMeter()
+        losses_reg_m = AverageMeter()
         self.model.train()
         if self.by_epoch:
             self.scheduler.step(epoch)
@@ -70,11 +72,16 @@ class SimVP(Base_method):
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
-                pred_y = self._predict(batch_x)
-                loss = self.criterion(pred_y, batch_y)
+                pred_y, translated = self._predict(batch_x)
+                encoded = self.model.encode(batch_y)
+                mse_loss = self.criterion(pred_y, batch_y[:,:,0::2])
+                reg_loss = self.criterion(translated, encoded)
+                loss = mse_loss + reg_loss
 
             if not self.dist:
                 losses_m.update(loss.item(), batch_x.size(0))
+                losses_mse_m.update(mse_loss.item(), batch_x.size(0))
+                losses_reg_m.update(reg_loss.item(), batch_x.size(0))
 
             if self.loss_scaler is not None:
                 if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
@@ -101,6 +108,8 @@ class SimVP(Base_method):
 
             if self.rank == 0:
                 log_buffer = 'train loss: {:.4f}'.format(loss.item())
+                log_buffer += ' | train mse loss: {:.4f}'.format(mse_loss.item())
+                log_buffer += ' | train reg loss: {:.4f}'.format(reg_loss.item())
                 log_buffer += ' | data time: {:.4f}'.format(data_time_m.avg)
                 train_pbar.set_description(log_buffer)
 
@@ -109,4 +118,4 @@ class SimVP(Base_method):
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
 
-        return num_updates, losses_m, eta
+        return num_updates, losses_m, losses_mse_m,losses_reg_m, eta

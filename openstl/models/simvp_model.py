@@ -44,15 +44,26 @@ class SimVP_Model(nn.Module):
         _, C_, H_, W_ = embed.shape
 
         z = embed.view(B, T, C_, H_, W_)
-        hid = self.hid(z)
-        hid = hid.reshape(B*T, C_, H_, W_)
+        encoded = self.hid(z)
+        hid = encoded.reshape(B*T, C_, H_, W_)
 
         Y = self.dec(hid, skip)
         Y = Y.reshape(B, T, C-4, H, W)
         #Y = Y.reshape(B, T, C, H, W)
 
-        return Y
+        return (Y,encoded)
     
+    def encode(self, x_raw):
+        B, T, C, H, W = x_raw.shape
+        x = x_raw.view(B*T, C, H, W)
+
+        embed, skip = self.enc(x)
+        _, C_, H_, W_ = embed.shape
+
+        z = embed.view(B, T, C_, H_, W_)
+        z = self.hid(z)
+
+        return z
 def sampling_generator(N, reverse=False):
     samplings = [False, True] * (N // 2)
     if reverse: return list(reversed(samplings[:N]))

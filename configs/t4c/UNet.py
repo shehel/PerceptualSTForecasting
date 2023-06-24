@@ -1,8 +1,8 @@
 method = 'UNet'
 in_channels = 96
-out_ts = 12
+out_ts = 6
 out_ch = 4
-depth = 3
+depth = 5
 wf = 6
 padding = True
 batch_norm = True

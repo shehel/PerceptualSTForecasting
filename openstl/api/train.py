@@ -353,10 +353,14 @@ class BaseExperiment(object):
         """A testing loop of STL methods"""
         if self.args.test:
             best_model_path = osp.join(self.path, 'checkpoint.pth')
+            #best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
             self._load_from_state_dict(torch.load(best_model_path))
+            #self._load(best_model_path)
+        
 
         self.call_hook('before_val_epoch')
         inputs, preds, trues = self.method.test_one_epoch(self, self.test_loader)
+        trues = trues[:,:,0::2]
         self.call_hook('after_val_epoch')
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
@@ -384,10 +388,14 @@ class BaseExperiment(object):
 
         if self._rank == 0:
             print_log(eval_log)
-            folder_path = osp.join(self.path, 'saved')
+            folder_path = osp.join(self.path, 'saved_comb')
             check_dir(folder_path)
 
-            for np_data in ['metrics', 'inputs', 'trues', 'preds']:
-                np.save(osp.join(folder_path, np_data + '.npy'), vars()[np_data])
-
+            # check if self.args.exp_name ends with unet 
+            if self.args.ex_name.endswith('unet'):
+                for np_data in ['metrics', 'inputs', 'trues', 'preds']:
+                    np.save(osp.join(folder_path, np_data + '.npy'), vars()[np_data])
+            else:
+                for np_data in ['metrics', 'trues', 'preds']:
+                    np.save(osp.join(folder_path, np_data + '.npy'), vars()[np_data])
         return eval_res['mse']

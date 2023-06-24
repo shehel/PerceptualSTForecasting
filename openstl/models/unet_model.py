@@ -37,8 +37,8 @@ class UNet_Model(nn.Module):
             self.down_path.append(UNetConvBlock(prev_channels, 2 ** (wf + i), padding, batch_norm, time_emb_dim=6 if pos_emb else None))
             prev_channels = 2 ** (wf + i)
 
-        self.hid = MidMetaNet(256, 256, 3,
-                 input_resolution=(32, 32), model_type="convsc")
+        #self.hid = MidMetaNet(256, 256, 3,
+        #         input_resolution=(32, 32), model_type="convsc")
 
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
@@ -62,7 +62,7 @@ class UNet_Model(nn.Module):
                 blocks.append(x)
                 x = torch.nn.functional.max_pool2d(x, 2)
         
-        translated = self.hid(x)
+        translated = x#self.hid(x)
         # copy translated to x
         x = translated
         for i, up in enumerate(self.up_path):
@@ -131,12 +131,31 @@ class Date2Vec(nn.Module):
         out = self.fc5(out)
         return out
 
+def hat_activation(p):
+    zeros = torch.zeros_like(p, device=p.device)
+    ones = torch.ones_like(p, device=p.device)
+    twos = 2 * ones
+
+    condition1 = (p >= 0) & (p < 1)
+    condition2 = (p >= 1) & (p < 2)
+
+    return torch.where(condition1, p, torch.where(condition2, twos - p, zeros))
+
+
+    # Scaled Hat activation function
+def scaled_hat_activation(alpha=100):
+    def scaled_hat(p):
+        return alpha * hat_activation(p)
+    return scaled_hat
+
 class Block(nn.Module):
     def __init__(self, dim, dim_out):
         super().__init__()
         self.proj = nn.Conv2d(dim, dim_out, kernel_size=3, padding=1)
-        self.act = nn.ReLU()
+        self.act = nn.ReLU()#scaled_hat_activation()
         self.norm = nn.BatchNorm2d(dim_out)
+#
+   
 
     def forward(self, x, scale_shift=None):
         x = self.proj(x)

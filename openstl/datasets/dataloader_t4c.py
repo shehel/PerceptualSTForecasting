@@ -97,8 +97,8 @@ class T4CDataset(Dataset):
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
         if self.test:
-            random_int_x = 10#255
-            random_int_y = 40#124
+            random_int_x = 255
+            random_int_y = 124
         else:
             random_int_x = random.randint(0, 300)
             random_int_y = random.randint(0, 300)
@@ -132,7 +132,7 @@ def load_data(batch_size, val_batch_size, data_root,
               num_workers=0, pre_seq_length=None, aft_seq_length=None,
               in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
     try:
-        data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
+        data_root = Dataset.get(dataset_id="59b1fd80e3274676aeba314c832bbd85").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
     train_filter = "**/training/*8ch.h5"
@@ -149,12 +149,17 @@ def load_data(batch_size, val_batch_size, data_root,
     #test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
     #test_set.file_list = [Path('/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5')]
     #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/ANTWERP/training/2020-04-25_ANTWERP_8ch.h5')]
-    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/BERLIN/training/2019-06-25_BERLIN_8ch.h5')]
-    test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2020-06-25_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/BERLIN/training/2019-06-25_BERLIN_8ch.h5')] 
+    test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/BERLIN/training/2019-06-25_BERLIN_8ch.h5'), 
+                          Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2020-06-25_MOSCOW_8ch.h5'),
+                            Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/ISTANBUL/training/2019-06-25_ISTANBUL_8ch.h5'),
+                            Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5'),]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2020-06-25_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-04-06_MOSCOW_8ch.h5')]
     #test_set.file_list = [Path('/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
     #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
 
-    test_set.len = 240
+    test_set.len = 240*len(test_set.file_list)
     dataloader_train = torch.utils.data.DataLoader(train_set,
                                                    batch_size=batch_size, shuffle=True,
                                                    pin_memory=True, drop_last=True,

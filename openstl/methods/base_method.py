@@ -111,7 +111,6 @@ class Base_method(object):
                 torch.cuda.empty_cache()
             if self.rank == 0:
                 prog_bar.update()
-
         results_all = {}
         for k in results[0].keys():
             results_cat = np.concatenate([
@@ -144,8 +143,7 @@ class Base_method(object):
             prog_bar.update()
             if self.args.empty_cache:
                 torch.cuda.empty_cache()
-            if i==20:
-                break
+            
         results_all = {}
         for k in results[0].keys():
             results_all[k] = np.concatenate(

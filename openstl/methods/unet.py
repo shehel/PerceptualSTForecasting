@@ -80,9 +80,9 @@ class UNet(Base_method):
 
             with self.amp_autocast():
                 pred_y, translated = self._predict(batch_x)
-                encoded = self.model.encode(batch_y)
+                #encoded = self.model.encode(batch_y)
                 mse_loss = self.criterion(pred_y, batch_y[:,:,0::2])
-                reg_loss = self.criterion(translated, encoded)
+                reg_loss = torch.tensor(0)#self.criterion(translated, encoded)
                 # gradients = torch.autograd.grad(pred_y, batch_x, grad_outputs=torch.ones_like(pred_y), create_graph=True, retain_graph=True)
                 #loss, mse_loss, reg_loss = self.criterion(gradients, pred_y- batch_x)]
                 
