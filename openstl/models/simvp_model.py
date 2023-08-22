@@ -104,10 +104,7 @@ class SimVP_Model(nn.Module):
 
         z = embed.view(B, T, C_, H_, W_)
         z = self.hid(z)
-        z = embed.view(B, T, C_, H_, W_)
-        z = self.hid(z)
 
-        return z
         return z
 def sampling_generator(N, reverse=False):
     samplings = [False, True] * (N // 2)

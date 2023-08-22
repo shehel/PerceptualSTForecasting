@@ -47,9 +47,7 @@ class SimVP(Base_method):
         """Forward the model"""
         if self.args.aft_seq_length == self.args.pre_seq_length:
             pred_y, translated = self.model(batch_x)
-            pred_y, translated = self.model(batch_x)
         elif self.args.aft_seq_length < self.args.pre_seq_length:
-            pred_y, translated = self.model(batch_x)
             pred_y, translated = self.model(batch_x)
             pred_y = pred_y[:, :self.args.aft_seq_length]
         elif self.args.aft_seq_length > self.args.pre_seq_length:
@@ -67,7 +65,6 @@ class SimVP(Base_method):
                 pred_y.append(cur_seq[:, :m])
             
             pred_y = torch.cat(pred_y, dim=1)
-        return pred_y, translated
         return pred_y, translated
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
@@ -188,8 +185,6 @@ class SimVP(Base_method):
 
             if self.rank == 0:
                 log_buffer = 'train loss: {:.4f}'.format(loss.item())
-                log_buffer += ' | train mse loss: {:.4f}'.format(mse_loss.item())
-                log_buffer += ' | train reg loss: {:.4f}'.format(reg_loss.item())
                 log_buffer += ' | train mse loss: {:.4f}'.format(mse_loss.item())
                 log_buffer += ' | train reg loss: {:.4f}'.format(reg_loss.item())
                 log_buffer += ' | data time: {:.4f}'.format(data_time_m.avg)

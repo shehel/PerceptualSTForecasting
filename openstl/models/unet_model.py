@@ -61,6 +61,10 @@ class UNet_Model(nn.Module):
             if i != len(self.down_path) - 1:
                 blocks.append(x)
                 x = torch.nn.functional.max_pool2d(x, 2)
+        
+        x = self.hid(x)
+        # copy translated to x
+        translated = x
         for i, up in enumerate(self.up_path):
             x = up(x, blocks[-i - 1])
         x=self.last(x)
@@ -68,6 +72,29 @@ class UNet_Model(nn.Module):
         x = torch.unsqueeze(x, 1)
         x = x.reshape(B, self.out_ts, self.out_ch, H, W)
         return x, translated
+
+    def recon(self, x, *args, **kwargs):
+        B, _, _, H, W = x.shape
+        x = x.reshape(-1, self.in_channels, H,W)
+
+        t = self.pos_model(t) if exists(self.pos_model) else None
+        blocks = []
+        for i, down in enumerate(self.down_path):
+            if i == 0:
+                x = down(x, t)
+            else:
+                x = down(x)
+            if i != len(self.down_path) - 1:
+                blocks.append(x)
+                x = torch.nn.functional.max_pool2d(x, 2)
+
+        for i, up in enumerate(self.up_path):
+            x = up(x, blocks[-i - 1])
+        x=self.last(x)
+        # add an empty dimension at first axis
+        x = torch.unsqueeze(x, 1)
+        x = x.reshape(B, self.out_ts, self.out_ch, H, W)
+        return x
 
     def encode(self, x):
         B, _, _, H, W = x.shape
@@ -144,28 +171,10 @@ def scaled_hat_activation(alpha=100):
         return alpha * hat_activation(p)
     return scaled_hat
 
-def hat_activation(p):
-    zeros = torch.zeros_like(p, device=p.device)
-    ones = torch.ones_like(p, device=p.device)
-    twos = 2 * ones
-
-    condition1 = (p >= 0) & (p < 1)
-    condition2 = (p >= 1) & (p < 2)
-
-    return torch.where(condition1, p, torch.where(condition2, twos - p, zeros))
-
-
-    # Scaled Hat activation function
-def scaled_hat_activation(alpha=100):
-    def scaled_hat(p):
-        return alpha * hat_activation(p)
-    return scaled_hat
-
 class Block(nn.Module):
     def __init__(self, dim, dim_out):
         super().__init__()
         self.proj = nn.Conv2d(dim, dim_out, kernel_size=3, padding=1)
-        self.act = nn.ReLU()#scaled_hat_activation()
         self.act = nn.ReLU()#scaled_hat_activation()
         self.norm = nn.BatchNorm2d(dim_out)
 #

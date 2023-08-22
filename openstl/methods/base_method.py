@@ -144,6 +144,13 @@ class Base_method(object):
             #                          batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]].cpu().numpy()])))
             results.append(dict(zip(['inputs', 'preds', 'trues'],
                                     [batch_x[:,:,4:5,:,:].cpu().numpy(),
+                                     pred_y[:,:,2:3,:,:].cpu().numpy()*batch_static.numpy(),
+                                     batch_y[:,:,4:5,:,:].cpu().numpy()*batch_static.numpy()])))
+                                    #  [batch_x[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
+                                    #  pred_y[:,0:1,2:3,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
+                                    #  batch_y[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy()])))
+
+                                    [batch_x[:,:,4:5,:,:].cpu().numpy(),
                                      pred_y[:,:4:5,:,:].cpu().numpy()*batch_static.numpy(),
                                      batch_y[:,:,4:5,:,:].cpu().numpy()*batch_static.numpy()])))
                                     #  [batch_x[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
@@ -153,7 +160,7 @@ class Base_method(object):
             prog_bar.update()
             if self.args.empty_cache:
                 torch.cuda.empty_cache()
-            
+
         results_all = {}
         for k in results[0].keys():
             results_all[k] = np.concatenate(
@@ -175,13 +182,6 @@ class Base_method(object):
             results = self._dist_forward_collect(vali_loader, len(vali_loader.dataset))
         else:
             results = self._nondist_forward_collect(vali_loader, len(vali_loader.dataset))
-<<<<<<< HEAD
-
-        preds = torch.tensor(results['preds'])
-        results['trues'] = results['trues'][:,:,0::2]
-        trues = torch.tensor(results['trues'])
-        losses_m = self.criterion(preds, trues).cpu().numpy()
-=======
         #results['preds'] = results['preds'][:,0:1,2:3,70,65]
         preds = torch.tensor(results['preds'])
         #results['trues'] = results['trues'][:,0:1,4:5,70,65]
@@ -192,7 +192,6 @@ class Base_method(object):
         #losses_m = losses_m + reg_loss
         #losses_m = losses_m.mean()
         #losses_m = losses_m.cpu().numpy()
->>>>>>> 81bc496... q11q1q1q3
         return results['preds'], results['trues'], losses_m
 
     def test_one_epoch(self, runner, test_loader, **kwargs):

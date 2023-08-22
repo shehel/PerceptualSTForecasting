@@ -18,6 +18,8 @@ from openstl.methods import method_maps
 from openstl.utils import (set_seed, print_log, output_namespace, check_dir, collect_env,
                            init_dist, init_random_seed,
                            get_dataset, get_dist_info, measure_throughput, weights_to_cpu)
+from PIL import Image
+import matplotlib.animation as animation
 from clearml import Task, OutputModel
 try:
     import nni
@@ -25,7 +27,33 @@ try:
 except ImportError: 
     has_nni = False
 
+import matplotlib.pyplot as plt
 import pdb
+
+def fig2img(fig):
+    """Convert a Matplotlib figure to a PIL Image and return it"""
+    buf = io.BytesIO()
+    fig.savefig(buf)
+    buf.seek(0)
+    img = Image.open(buf)
+    return img.convert('RGB')
+
+def get_ani(mat):
+    fig, ax = plt.subplots(figsize=(8, 8))
+    imgs = []
+    for img in mat:
+        img = ax.imshow(img, animated=True, vmax=30,vmin=0)
+        imgs.append([img])
+    ani = animation.ArtistAnimation(fig, imgs, interval=1000, blit=True, repeat_delay=3000)
+    plt.close()
+    return ani.to_html5_video()
+
+def plot_tmaps(true, pred, epoch, logger):
+    logger.current_logger().report_media(
+            "viz", "true frames", iteration=epoch, stream=get_ani(true), file_extension='html')
+
+    logger.current_logger().report_media(
+                "viz", "pred frames", iteration=epoch, stream=get_ani(pred), file_extension='html')
 class BaseExperiment(object):
     """The basic class of PyTorch training and evaluation."""
 
@@ -326,11 +354,19 @@ class BaseExperiment(object):
                         series='Train MSE Loss', value=loss_mse.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report', 
                         series='Train Reg Loss', value=loss_reg.avg, iteration=epoch)
-
                     logger.report_scalar(title='Training Report', 
-                        series='Val Loss', value=vali_loss, iteration=epoch)
+                        series='Train Div Loss', value=loss_div.avg, iteration=epoch)
+                    logger.report_scalar(title='Training Report',
+                        series='Train Div Std', value=loss_divs.avg, iteration=epoch)
+                    logger.report_scalar(title='Training Report',
+                        series='Train total loss', value=loss_total.avg, iteration=epoch)
+                    logger.report_scalar(title='Training Report',
+                        series='Train sum loss', value=loss_sum.avg, iteration=epoch)
 
-                    recorder(vali_loss, self.method.model, self.path)
+                    #logger.report_scalar(title='Training Report',
+                    #    series='Val Loss', value=vali_loss, iteration=epoch)
+
+                    recorder(vali_loss, self.method.model, self.path, epoch)
                     self._save(name='latest')
             if self._use_gpu and self.args.empty_cache:
                 torch.cuda.empty_cache()
@@ -399,6 +435,7 @@ class BaseExperiment(object):
 
         self.call_hook('before_val_epoch')
         inputs, preds, trues = self.method.test_one_epoch(self, self.test_loader)
+        trues = trues[:,:,0::2]
         self.call_hook('after_val_epoch')
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
