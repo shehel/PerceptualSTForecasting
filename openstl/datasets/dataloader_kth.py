@@ -140,13 +140,11 @@ class DataProcess(object):
         Returns:
             A dataset and indices of the sequence.
         """
-        # path = paths[0]
+        assert mode in ['train', 'test']
         if mode == 'train':
             person_id = self.train_person
-        elif mode == 'test':
-            person_id = self.test_person
         else:
-            print('ERROR!')
+            person_id = self.test_person
         print('begin load data' + str(path))
 
         frames_np = []
@@ -198,7 +196,7 @@ class DataProcess(object):
             if frames_person_mark[index] == frames_person_mark[index - self.seq_len + 1]:
                 end = int(frames_file_name[index][6:10])
                 start = int(frames_file_name[index - self.seq_len + 1][6:10])
-                # TODO(yunbo): mode == 'test'
+
                 if end - start == self.seq_len - 1:
                     indices.append(index - self.seq_len + 1)
                     if frames_category[index] == 1:
@@ -229,7 +227,7 @@ class DataProcess(object):
 
 def load_data(batch_size, val_batch_size, data_root, num_workers=4,
               pre_seq_length=10, aft_seq_length=20, in_shape=[10, 1, 128, 128],
-              distributed=False, use_augment=False, use_prefetcher=False):
+              distributed=False, use_augment=False, use_prefetcher=False, drop_last=False):
 
     img_width = in_shape[-1] if in_shape is not None else 128
     # pre_seq_length, aft_seq_length = 10, 10
@@ -264,7 +262,7 @@ def load_data(batch_size, val_batch_size, data_root, num_workers=4,
     dataloader_test = create_loader(test_set,
                                     batch_size=val_batch_size,
                                     shuffle=False, is_training=False,
-                                    pin_memory=True, drop_last=False,
+                                    pin_memory=True, drop_last=drop_last,
                                     num_workers=num_workers,
                                     distributed=distributed, use_prefetcher=use_prefetcher)
 

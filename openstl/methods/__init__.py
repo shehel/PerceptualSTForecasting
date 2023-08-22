@@ -6,11 +6,14 @@ from .e3dlstm import E3DLSTM
 from .mau import MAU
 from .mim import MIM
 from .phydnet import PhyDNet
+from .prednet import PredNet
 from .predrnn import PredRNN
 from .predrnnpp import PredRNNpp
 from .predrnnv2 import PredRNNv2
 from .simvp import SimVP
 from .unet import UNet
+from .tau import TAU
+from .dmvfn import DMVFN
 
 method_maps = {
     'convlstm': ConvLSTM,
@@ -19,14 +22,18 @@ method_maps = {
     'mau': MAU,
     'mim': MIM,
     'phydnet': PhyDNet,
+    'prednet': PredNet,
     'predrnn': PredRNN,
     'predrnnpp': PredRNNpp,
     'predrnnv2': PredRNNv2,
     'simvp': SimVP,
     'unet': UNet
+    'tau': TAU,
+    'dmvfn': DMVFN
 }
 
 __all__ = [
     'method_maps', 'ConvLSTM', 'CrevNet', 'E3DLSTM', 'MAU', 'MIM',
-    'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'SimVP', 'UNet'
+    'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'PredNet', 'SimVP', 'UNet' 
+    'TAU'
 ]

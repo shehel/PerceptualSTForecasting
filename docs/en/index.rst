@@ -17,8 +17,18 @@ Welcome to SimVP's documentation!
    :maxdepth: 1
    :caption: Model Zoos
 
+   model_zoos/traffic_benchmarks.md
    model_zoos/video_benchmarks.md
-   
+   model_zoos/weather_benchmarks.md
+
+.. toctree::
+   :maxdepth: 1
+   :caption: Visualization
+
+   visualization/traffic_visualization.md
+   visualization/video_visualization.md
+   visualization/weather_visualization.md
+
 .. toctree::
    :maxdepth: 1
    :caption: Notes

@@ -29,6 +29,8 @@ def create_parser():
                         help='Whether to empty cuda cache after GPU training')
     parser.add_argument('--find_unused_parameters', action='store_true', default=False,
                         help='Whether to find unused parameters in forward during DDP training')
+    parser.add_argument('--broadcast_buffers', action='store_false', default=True,
+                        help='Whether to set broadcast_buffers to false during DDP training')
     parser.add_argument('--resume_from', type=str, default=None, help='the checkpoint file to resume from')
     parser.add_argument('--auto_resume', action='store_true', default=False,
                         help='When training was interupted, resume from the latest checkpoint')
@@ -56,13 +58,15 @@ def create_parser():
                         help='Whether to use image augmentations for training')
     parser.add_argument('--use_prefetcher', action='store_true', default=False,
                         help='Whether to use prefetcher for faster data loading')
+    parser.add_argument('--drop_last', action='store_true', default=False,
+                        help='Whether to drop the last batch in the val data loading')
 
     # method parameters
     parser.add_argument('--method', '-m', default='SimVP', type=str,
-                        choices=['ConvLSTM', 'convlstm', 'CrevNet', 'crevnet', 'E3DLSTM', 'e3dlstm',
-                                 'MAU', 'mau', 'MIM', 'mim', 'PhyDNet', 'phydnet',
+                        choices=['ConvLSTM', 'convlstm', 'CrevNet', 'crevnet', 'DMVFN', 'dmvfn', 'E3DLSTM', 'e3dlstm',
+                                 'MAU', 'mau', 'MIM', 'mim', 'PhyDNet', 'phydnet', 'PredNet', 'prednet',
                                  'PredRNN', 'predrnn', 'PredRNNpp', 'predrnnpp', 'PredRNNv2', 'predrnnv2',
-                                 'SimVP', 'simvp'],
+                                 'SimVP', 'simvp', 'TAU', 'tau'],
                         help='Name of video prediction method to train (default: "SimVP")')
     parser.add_argument('--config_file', '-c', default='configs/mmnist/simvp/SimVP_gSTA.py', type=str,
                         help='Path to the default config file')
@@ -89,11 +93,13 @@ def create_parser():
                         help='Clip gradient norm (default: None, no clipping)')
     parser.add_argument('--clip_mode', type=str, default='norm',
                         help='Gradient clipping mode. One of ("norm", "value", "agc")')
+    parser.add_argument('--early_stop_epoch', default=-1, type=int,
+                        help='Check to early stop after this epoch')
 
     # Training parameters (scheduler)
-    parser.add_argument('--sched', default='onecycle', type=str, metavar='SCHEDULER',
+    parser.add_argument('--sched', default=None, type=str, metavar='SCHEDULER',
                         help='LR scheduler (default: "onecycle"')
-    parser.add_argument('--lr', default=1e-3, type=float, help='Learning rate')
+    parser.add_argument('--lr', default=None, type=float, help='Learning rate (default: 1e-3)')
     parser.add_argument('--lr_k_decay', type=float, default=1.0,
                         help='learning rate k-decay for cosine/poly (default: 1.0)')
     parser.add_argument('--warmup_lr', type=float, default=1e-5, metavar='LR',

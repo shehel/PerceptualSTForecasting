@@ -57,7 +57,7 @@ def plot_tmaps(true, pred, epoch, logger):
 class BaseExperiment(object):
     """The basic class of PyTorch training and evaluation."""
 
-    def __init__(self, args, task):
+    def __init__(self, args, task, dataloaders=None):
         """Initialize experiments (non-dist as an example)"""
         self.task = task
         self.args = args
@@ -74,9 +74,11 @@ class BaseExperiment(object):
         self._rank = 0
         self._world_size = 1
         self._dist = self.args.dist
+        self.early_stop = self.args.early_stop_epoch
+        
         self.losses = ['val_train_loss', 'val_total_loss', 'val_main_loss', 'val_reg_loss', "val_div_loss", 'val_std_div', 'val_sum']
 
-        self._preparation()
+        self._preparation(dataloaders)
         if self._rank == 0:
             print_log(output_namespace(self.args))
             self.display_method_info()
@@ -88,19 +90,19 @@ class BaseExperiment(object):
             if self.args.dist:
                 device = f'cuda:{self._rank}'
                 torch.cuda.set_device(self._rank)
-                print(f'Use distributed mode with GPUs: local rank={self._rank}')
+                print_log(f'Use distributed mode with GPUs: local rank={self._rank}')
             else:
                 device = torch.device('cuda:0')
-                print('Use non-distributed mode with GPU:', device)
+                print_log(f'Use non-distributed mode with GPU: {device}')
         else:
             self._use_gpu = False
             device = torch.device('cpu')
-            print('Use CPU')
+            print_log('Use CPU')
             if self.args.dist:
                 assert False, "Distributed training requires GPUs"
         return device
 
-    def _preparation(self):
+    def _preparation(self, dataloaders=None):
         """Preparation of environment and basic experiment setups"""
         if 'LOCAL_RANK' not in os.environ:
             os.environ['LOCAL_RANK'] = str(self.args.local_rank)
@@ -118,6 +120,8 @@ class BaseExperiment(object):
             # re-set gpu_ids with distributed training mode
             self._gpu_ids = range(self._world_size)
         self.device = self._acquire_device()
+        if self._early_stop <= self._max_epochs // 5:
+            self._early_stop = self._max_epochs * 2
 
         # log and checkpoint
         base_dir = self.args.res_dir if self.args.res_dir is not None else 'work_dirs'
@@ -171,7 +175,7 @@ class BaseExperiment(object):
         set_seed(seed)
 
         # prepare data
-        self._get_data()
+        self._get_data(dataloaders)
         # build the method
         self._build_method()
         # build hooks
@@ -239,10 +243,14 @@ class BaseExperiment(object):
                 stage_hook_infos.append(info)
         return '\n'.join(stage_hook_infos)
 
-    def _get_data(self):
+    def _get_data(self, dataloaders=None):
         """Prepare datasets and dataloaders"""
-        self.train_loader, self.vali_loader, self.test_loader = \
-            get_dataset(self.args.dataname, self.config)
+        if dataloaders is None:
+            self.train_loader, self.vali_loader, self.test_loader = \
+                get_dataset(self.args.dataname, self.config)
+        else:
+            self.train_loader, self.vali_loader, self.test_loader = dataloaders
+
         if self.vali_loader is None:
             self.vali_loader = self.test_loader
         self._max_iters = self._max_epochs * len(self.train_loader)
@@ -285,7 +293,7 @@ class BaseExperiment(object):
     def display_method_info(self):
         """Plot the basic infomation of supported methods"""
         T, C, H, W = self.args.in_shape
-        if self.args.method in ['simvp','unet'] :
+        if self.args.method in ['simvp', 'unet', 'tau']:
             input_dummy = torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device)
         elif self.args.method == 'crevnet':
             # crevnet must use the batchsize rather than 1
@@ -307,6 +315,10 @@ class BaseExperiment(object):
             _tmp_input = torch.ones(1, self.args.total_length, Hp, Wp, Cp).to(self.device)
             _tmp_flag = torch.ones(1, self.args.total_length - 2, Hp, Wp, Cp).to(self.device)
             input_dummy = (_tmp_input, _tmp_flag)
+        elif self.args.method == 'dmvfn':
+            input_dummy = torch.ones(1, 3, C, H, W, requires_grad=True).to(self.device)
+        elif self.args.method == 'prednet':
+           input_dummy = torch.ones(1, 1, C, H, W, requires_grad=True).to(self.device)
         else:
             raise ValueError(f'Invalid method name {self.args.method}')
 
@@ -323,8 +335,9 @@ class BaseExperiment(object):
 
     def train(self):
         """Training loops of STL methods"""
-        recorder = Recorder(verbose=True)
+        recorder = Recorder(verbose=True, early_stop_time=min(self._max_epochs // 10, 10))
         num_updates = self._epoch * self.steps_per_epoch
+        early_stop = False
         self.call_hook('before_train_epoch')
 
         logger = self.task.get_logger()
@@ -342,7 +355,7 @@ class BaseExperiment(object):
                 cur_lr = self.method.current_lr()
                 cur_lr = sum(cur_lr) / len(cur_lr)
                 with torch.no_grad():
-                    vali_loss, eval_res = self.vali(self.vali_loader, logger, epoch)
+                    vali_loss = self.vali(logger, epoch)
 
                 if self._rank == 0:
 
@@ -361,15 +374,13 @@ class BaseExperiment(object):
                     logger.report_scalar(title='Training Report',
                         series='Train total loss', value=loss_total.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report',
-                        series='Train sum loss', value=loss_sum.avg, iteration=epoch)
-
-                    #logger.report_scalar(title='Training Report',
-                    #    series='Val Loss', value=vali_loss, iteration=epoch)
-
-                    recorder(vali_loss, self.method.model, self.path, epoch)
+                        series='Train sum loss', value=loss_sum.avg, iteration=epoch) 
+                    early_stop =recorder(vali_loss, self.method.model, self.path)
                     self._save(name='latest')
             if self._use_gpu and self.args.empty_cache:
                 torch.cuda.empty_cache()
+            if epoch > self._early_stop and early_stop:  # early stop training
+                print_log('Early stop training at f{} epoch'.format(epoch))
 
         if not check_dir(self.path):  # exit training when work_dir is removed
             assert False and "Exit training because work_dir is removed"
@@ -381,11 +392,10 @@ class BaseExperiment(object):
         time.sleep(1)  # wait for some hooks like loggers to finish
         self.call_hook('after_run')
 
-
-    def vali(self, vali_loader, logger, epoch):
+    def vali(self, logger):
         """A validation loop during training"""
         self.call_hook('before_val_epoch')
-        preds, trues, val_loss = self.method.vali_one_epoch(self, self.vali_loader)
+        results, eval_log = self.method.vali_one_epoch(self, self.vali_loader)
         for loss, name in zip(val_loss, self.losses):
             logger.report_scalar(title='Training Report',
                         series=name, value=loss.cpu().numpy(), iteration=epoch)
@@ -410,19 +420,11 @@ class BaseExperiment(object):
         self.call_hook('after_val_epoch')
 
         if self._rank == 0:
-            if 'weather' in self.args.dataname:
-                metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
-            else:
-                metric_list, spatial_norm = ['mse', 'mae'], False
-             
-            eval_res, eval_log = metric(preds, trues, vali_loader.dataset.mean, vali_loader.dataset.std,
-                                        metrics=metric_list, spatial_norm=spatial_norm)
-
             print_log('val\t '+eval_log)
             if has_nni:
-                nni.report_intermediate_result(eval_res['mse'])
+                nni.report_intermediate_result(results['mse'].mean())
 
-        return val_loss[0].cpu().numpy(), eval_res
+        return results['loss'].mean()
 
     def test(self):
         """A testing loop of STL methods"""
@@ -434,8 +436,7 @@ class BaseExperiment(object):
 
 
         self.call_hook('before_val_epoch')
-        inputs, preds, trues = self.method.test_one_epoch(self, self.test_loader)
-        trues = trues[:,:,0::2]
+        results = self.method.test_one_epoch(self, self.test_loader)
         self.call_hook('after_val_epoch')
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
@@ -454,23 +455,25 @@ class BaseExperiment(object):
         preds=  preds[:,:,:]#, 62-10,92-40]
 
         if 'weather' in self.args.dataname:
-            metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
+            metric_list, spatial_norm = self.args.metrics, True
+            channel_names = self.test_loader.dataset.data_name if 'mv' in self.args.dataname else None
         else:
-            metric_list, spatial_norm = ['mse', 'mae'], False
-        eval_res, eval_log = metric(preds, trues, self.test_loader.dataset.mean, self.test_loader.dataset.std,
-                                    metrics=metric_list, spatial_norm=spatial_norm)
-        metrics = np.array([eval_res['mae'], eval_res['mse']])
+            metric_list, spatial_norm, channel_names = self.args.metrics, False, None
+        eval_res, eval_log = metric(results['preds'], results['trues'],
+                                    self.test_loader.dataset.mean, self.test_loader.dataset.std,
+                                    metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
+        results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
 
         if self._rank == 0:
             print_log(eval_log)
             folder_path = osp.join(self.path, 'saved_comb_training')
             check_dir(folder_path)
 
-            # check if self.args.exp_name ends with unet
             if self.args.ex_name.endswith('unet'):
                 for np_data in ['metrics', 'inputs', 'trues', 'preds']:
-                    np.save(osp.join(folder_path, np_data + '.npy'), vars()[np_data])
+                    np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
             else:
                 for np_data in ['metrics', 'trues', 'preds']:
-                    np.save(osp.join(folder_path, np_data + '.npy'), vars()[np_data])
+                    np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
+
         return eval_res['mse']

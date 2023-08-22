@@ -40,8 +40,8 @@ class SimVP(Base_method):
         #self.criterion = pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=True)
         #self.criterion_cpu =  pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=False)
 
-    def _build_model(self, config):
-        return SimVP_Model(**config).to(self.device)
+    def _build_model(self, args):
+        return SimVP_Model(**args).to(self.device)
 
     def _predict(self, batch_x, batch_y=None, **kwargs):
         """Forward the model"""

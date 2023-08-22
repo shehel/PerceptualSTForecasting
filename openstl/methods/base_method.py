@@ -7,6 +7,7 @@ from contextlib import suppress
 from timm.utils import NativeScaler
 from timm.utils.agc import adaptive_clip_grad
 
+from openstl.core import metric
 from openstl.core.optim_scheduler import get_optim_scheduler
 from openstl.utils import gather_tensors_batch, get_dist_info, ProgressBar
 
@@ -47,6 +48,11 @@ class Base_method(object):
         # setup automatic mixed-precision (AMP) loss scaling and op casting
         self.amp_autocast = suppress  # do nothing
         self.loss_scaler = None
+        # setup metrics
+        if 'weather' in self.args.dataname:
+            self.metric_list, self.spatial_norm = ['mse', 'rmse', 'mae'], True
+        else:
+            self.metric_list, self.spatial_norm = ['mse', 'mae'], False
 
     def _build_model(self, **kwargs):
         raise NotImplementedError
@@ -64,7 +70,8 @@ class Base_method(object):
                print('Using native PyTorch AMP. Training in mixed precision (fp16).')
         else:
             print('AMP not enabled. Training in float32.')
-        self.model = NativeDDP(self.model, device_ids=[self.rank], broadcast_buffers=True,
+        self.model = NativeDDP(self.model, device_ids=[self.rank],
+                               broadcast_buffers=self.args.broadcast_buffers,
                                find_unused_parameters=self.args.find_unused_parameters)
 
     def train_one_epoch(self, runner, train_loader, **kwargs): 
@@ -84,88 +91,98 @@ class Base_method(object):
         """
         raise NotImplementedError
 
-    def _dist_forward_collect(self, data_loader, length=None):
+    def _dist_forward_collect(self, data_loader, length=None, gather_data=False):
         """Forward and collect predictios in a distributed manner.
 
         Args:
             data_loader: dataloader of evaluation.
             length (int): Expected length of output arrays.
+            gather_data (bool): Whether to gather raw predictions and inputs.
 
         Returns:
             results_all (dict(np.ndarray)): The concatenated outputs.
         """
+        # preparation
         results = []
         length = len(data_loader.dataset) if length is None else length
         if self.rank == 0:
             prog_bar = ProgressBar(len(data_loader))
 
+        # loop
         for idx, (batch_x, batch_y) in enumerate(data_loader):
             if idx == 0:
                 part_size = batch_x.shape[0]
             with torch.no_grad():
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
                 pred_y = self._predict(batch_x, batch_y)
-            results.append(dict(zip(['inputs', 'preds', 'trues'],
-                                    [batch_x.cpu(), pred_y.cpu(), batch_y.cpu()])))
+
+            if gather_data:  # return raw datas
+                results.append(dict(zip(['inputs', 'preds', 'trues'],
+                                        [batch_x.cpu().numpy(), pred_y.cpu().numpy(), batch_y.cpu().numpy()])))
+            else:  # return metrics
+                eval_res, _ = metric(pred_y.cpu().numpy(), batch_y.cpu().numpy(),
+                                     data_loader.dataset.mean, data_loader.dataset.std,
+                                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
+                eval_res['loss'] = self.criterion(pred_y, batch_y).cpu().numpy()
+                for k in eval_res.keys():
+                    eval_res[k] = eval_res[k].reshape(1)
+                results.append(eval_res)
+
             if self.args.empty_cache:
                 torch.cuda.empty_cache()
             if self.rank == 0:
                 prog_bar.update()
+
+        # post gather tensors
         results_all = {}
         for k in results[0].keys():
-            results_cat = np.concatenate([
-                batch[k].cpu().numpy() for batch in results], axis=0)
+            results_cat = np.concatenate([batch[k] for batch in results], axis=0)
             # gether tensors by GPU (it's no need to empty cache)
             results_gathered = gather_tensors_batch(results_cat, part_size=min(part_size*8, 16))
             results_strip = np.concatenate(results_gathered, axis=0)[:length]
             results_all[k] = results_strip
         return results_all
 
-    def _nondist_forward_collect(self, data_loader, length=None):
+    def _nondist_forward_collect(self, data_loader, length=None, gather_data=False):
         """Forward and collect predictios.
 
         Args:
             data_loader: dataloader of evaluation.
             length (int): Expected length of output arrays.
+            gather_data (bool): Whether to gather raw predictions and inputs.
 
         Returns:
             results_all (dict(np.ndarray)): The concatenated outputs.
         """
+        # preparation
         results = []
         prog_bar = ProgressBar(len(data_loader))
         length = len(data_loader.dataset) if length is None else length
         for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
             with torch.no_grad():
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y,_ = self._predict(batch_x, batch_y)
-            # results.append(dict(zip(['inputs', 'preds', 'trues'],
-            #                         [batch_x[:,:,4:5,[52,83,63,42],[76,104,14,63]].cpu().numpy(),
-            #                          pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]].cpu().numpy(),
-            #                          batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]].cpu().numpy()])))
-            results.append(dict(zip(['inputs', 'preds', 'trues'],
-                                    #  [batch_x[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
-                                    #  pred_y[:,0:1,2:3,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
-                                    #  batch_y[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy()])))
+                pred_y = self._predict(batch_x, batch_y)
 
-                                    #  [batch_x[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
-                                    #  pred_y[:,0:1,2:3,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
-                                    #  batch_y[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy()])))
-
-                                    [batch_x[:,:,4:5,:,:].cpu().numpy(),
-                                     pred_y[:,:4:5,:,:].cpu().numpy()*batch_static.numpy(),
-                                     batch_y[:,:,4:5,:,:].cpu().numpy()*batch_static.numpy()])))
-                                    #  [batch_x[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
-                                    #  pred_y[:,0:1,2:3,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
-                                    #  batch_y[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy()])))
+            if gather_data:  # return raw datas
+                results.append(dict(zip(['inputs', 'preds', 'trues'],
+                                        [batch_x.cpu().numpy(), pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy()])))
+            else:  # return metrics
+                eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
+                                     data_loader.dataset.mean, data_loader.dataset.std,
+                                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
+                eval_res['loss'] = self.criterion(pred_y, batch_y).cpu().numpy()
+                for k in eval_res.keys():
+                    eval_res[k] = eval_res[k].reshape(1)
+                results.append(eval_res)
 
             prog_bar.update()
             if self.args.empty_cache:
                 torch.cuda.empty_cache()
 
+        # post gather tensors
         results_all = {}
         for k in results[0].keys():
-            results_all[k] = np.concatenate(
-                [batch[k] for batch in results], axis=0)
+            results_all[k] = np.concatenate([batch[k] for batch in results], axis=0)
         return results_all
 
     def vali_one_epoch(self, runner, vali_loader, **kwargs):
@@ -177,23 +194,22 @@ class Base_method(object):
 
         Returns:
             list(tensor, ...): The list of predictions and losses.
+            eval_log(str): The string of metrics.
         """
         self.model.eval()
         if self.dist and self.world_size > 1:
-            results = self._dist_forward_collect(vali_loader, len(vali_loader.dataset))
+            results = self._dist_forward_collect(vali_loader, len(vali_loader.dataset), gather_data=False)
         else:
-            results = self._nondist_forward_collect(vali_loader, len(vali_loader.dataset))
-        #results['preds'] = results['preds'][:,0:1,2:3,70,65]
-        preds = torch.tensor(results['preds'])
-        #results['trues'] = results['trues'][:,0:1,4:5,70,65]
-        trues = torch.tensor(results['trues'])
-        #losses_m = self.criterion_cpu(preds, trues)
-        losses_m= self.criterion(preds, trues)
-        #reg_loss = self.criterion(torch.std(preds, dim=1), torch.std(trues, dim=1))
-        #losses_m = losses_m + reg_loss
-        #losses_m = losses_m.mean()
-        #losses_m = losses_m.cpu().numpy()
-        return results['preds'], results['trues'], losses_m
+            results = self._nondist_forward_collect(vali_loader, len(vali_loader.dataset), gather_data=False)
+
+        eval_log = ""
+        for k, v in results.items():
+            v = v.mean()
+            if k != "loss":
+                eval_str = f"{k}:{v.mean()}" if len(eval_log) == 0 else f", {k}:{v.mean()}"
+                eval_log += eval_str
+
+        return results, eval_log
 
     def test_one_epoch(self, runner, test_loader, **kwargs):
         """Evaluate the model with test_loader.
@@ -207,11 +223,11 @@ class Base_method(object):
         """
         self.model.eval()
         if self.dist and self.world_size > 1:
-            results = self._dist_forward_collect(test_loader,)
+            results = self._dist_forward_collect(test_loader, gather_data=True)
         else:
-            results = self._nondist_forward_collect(test_loader)
+            results = self._nondist_forward_collect(test_loader, gather_data=True)
 
-        return results['inputs'], results['preds'], results['trues']
+        return results
 
     def current_lr(self) -> Union[List[float], Dict[str, List[float]]]:
         """Get current learning rates.

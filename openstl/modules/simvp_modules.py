@@ -23,7 +23,8 @@ class BasicConv2d(nn.Module):
                  padding=0,
                  dilation=1,
                  upsampling=False,
-                 act_norm=False):
+                 act_norm=False,
+                 act_inplace=True):
         super(BasicConv2d, self).__init__()
         self.act_norm = act_norm
         if upsampling is True:
@@ -40,7 +41,7 @@ class BasicConv2d(nn.Module):
         #self.norm = nn.GroupNorm(2, out_channels)
         self.norm = nn.BatchNorm2d(out_channels)
         #self.act = nn.SiLU(True)
-        self.act = nn.ReLU(inplace=True)
+        self.act = nn.ReLU(inplace=act_inplace)
 
         self.apply(self._init_weights)
 
@@ -64,14 +65,16 @@ class ConvSC(nn.Module):
                  kernel_size=3,
                  downsampling=False,
                  upsampling=False,
-                 act_norm=True):
+                 act_norm=True,
+                 act_inplace=True):
         super(ConvSC, self).__init__()
 
         stride = 2 if downsampling is True else 1
         padding = (kernel_size - stride + 1) // 2
 
         self.conv = BasicConv2d(C_in, C_out, kernel_size=kernel_size, stride=stride,
-                                upsampling=upsampling, padding=padding, act_norm=act_norm)
+                                upsampling=upsampling, padding=padding,
+                                act_norm=act_norm, act_inplace=act_inplace)
 
     def forward(self, x):
         y = self.conv(x)
@@ -139,8 +142,6 @@ class ConvSC3D(nn.Module):
         y = self.conv(x)
         return y
 
-####
-
 class GroupConv2d(nn.Module):
 
     def __init__(self,
@@ -150,7 +151,8 @@ class GroupConv2d(nn.Module):
                  stride=1,
                  padding=0,
                  groups=1,
-                 act_norm=False):
+                 act_norm=False,
+                 act_inplace=True):
         super(GroupConv2d, self).__init__()
         self.act_norm=act_norm
         if in_channels % groups != 0:
@@ -159,7 +161,7 @@ class GroupConv2d(nn.Module):
             in_channels, out_channels, kernel_size=kernel_size,
             stride=stride, padding=padding, groups=groups)
         self.norm = nn.GroupNorm(groups,out_channels)
-        self.activate = nn.LeakyReLU(0.2, inplace=True)
+        self.activate = nn.LeakyReLU(0.2, inplace=act_inplace)
 
     def forward(self, x):
         y = self.conv(x)
@@ -604,7 +606,7 @@ class ViTSubBlock(ViTBlock):
         x = x.flatten(2).transpose(1, 2)
         x = x + self.drop_path(self.attn(self.norm1(x)))
         x = x + self.drop_path(self.mlp(self.norm2(x)))
-        return x.reshape(B, H, W, C).permute(0, 3, 1, 2)
+        return x.reshape(B, H, W, C).permute(0, 3, 1, 2)    
 
 class Block(nn.Module):
     def __init__(self, dim, dim_out):
@@ -658,3 +660,74 @@ class UNetUpBlock(nn.Module):
         out = self.conv_block(out)
 
         return out
+
+
+class TemporalAttention(nn.Module):
+    """A Temporal Attention block for Temporal Attention Unit"""
+
+    def __init__(self, d_model, kernel_size=21, attn_shortcut=True):
+        super().__init__()
+
+        self.proj_1 = nn.Conv2d(d_model, d_model, 1)         # 1x1 conv
+        self.activation = nn.GELU()                          # GELU
+        self.spatial_gating_unit = TemporalAttentionModule(d_model, kernel_size)
+        self.proj_2 = nn.Conv2d(d_model, d_model, 1)         # 1x1 conv
+        self.attn_shortcut = attn_shortcut
+
+    def forward(self, x):
+        if self.attn_shortcut:
+            shortcut = x.clone()
+        x = self.proj_1(x)
+        x = self.activation(x)
+        x = self.spatial_gating_unit(x)
+        x = self.proj_2(x)
+        if self.attn_shortcut:
+            x = x + shortcut
+        return x
+    
+
+class TemporalAttentionModule(nn.Module):
+    """Large Kernel Attention for SimVP"""
+
+    def __init__(self, dim, kernel_size, dilation=3, reduction=16):
+        super().__init__()
+        d_k = 2 * dilation - 1
+        d_p = (d_k - 1) // 2
+        dd_k = kernel_size // dilation + ((kernel_size // dilation) % 2 - 1)
+        dd_p = (dilation * (dd_k - 1) // 2)
+
+        self.conv0 = nn.Conv2d(dim, dim, d_k, padding=d_p, groups=dim)
+        self.conv_spatial = nn.Conv2d(
+            dim, dim, dd_k, stride=1, padding=dd_p, groups=dim, dilation=dilation)
+        self.conv1 = nn.Conv2d(dim, dim, 1)
+
+        self.reduction = max(dim // reduction, 4)
+        self.avg_pool = nn.AdaptiveAvgPool2d(1)
+        self.fc = nn.Sequential(
+            nn.Linear(dim, dim // self.reduction, bias=False), # reduction
+            nn.ReLU(True),
+            nn.Linear(dim // self.reduction, dim, bias=False), # expansion
+            nn.Sigmoid()
+        )
+
+    def forward(self, x):
+        u = x.clone()
+        attn = self.conv0(x)           # depth-wise conv
+        attn = self.conv_spatial(attn) # depth-wise dilation convolution
+        f_x = self.conv1(attn)         # 1x1 conv
+        # append a se operation
+        b, c, _, _ = x.size()
+        se_atten = self.avg_pool(x).view(b, c)
+        se_atten = self.fc(se_atten).view(b, c, 1, 1)
+        return se_atten * f_x * u
+
+
+class TAUSubBlock(GASubBlock):
+    """A TAUBlock (tau) for Temporal Attention Unit"""
+
+    def __init__(self, dim, kernel_size=21, mlp_ratio=4.,
+                 drop=0., drop_path=0.1, init_value=1e-2, act_layer=nn.GELU):
+        super().__init__(dim=dim, kernel_size=kernel_size, mlp_ratio=mlp_ratio,
+                 drop=drop, drop_path=drop_path, init_value=init_value, act_layer=act_layer)
+        
+        self.attn = TemporalAttention(dim, kernel_size)

@@ -135,10 +135,9 @@ figs
 
 # temp
 configs_test/
-configs/kitticaltech/simvp
-configs/kth/simvp
-configs/human/simvp
-notebooks/viz.ipynb
+api/test.py
+configs/kinetics/simvp
+configs/bair/simvpnotebooks/viz.ipynb
 mnist_test_seq.npy
 train-images-idx3-ubyte.gz
 notebooks/simunet.gif

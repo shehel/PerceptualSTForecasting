@@ -64,21 +64,22 @@ bash tools/dist_train.sh ${CONFIG_FILE} ${GPUS} [optional arguments]
 - `${CONFIG_FILE}` : The path of a model config file, which will provide detailed settings for a STL method.
 - `${GPUS}` : The number of GPUs for DDP training.
 
-Examples of multiple GPUs training on Moving MNIST dataset with a machine with 8 GPUs.
+Examples of multiple GPUs training on Moving MNIST dataset with a machine with 8 GPUs. Note that some recurrent-based STL methods (e.g., ConvLSTM, PredRNN++) need `--find_unused_parameters` during DDP training.
 ```shell
 PORT=29001 CUDA_VISIBLE_DEVICES=0,1 bash tools/dist_train.sh configs/mmnist/simvp/SimVP_gSTA.py 2 -d mmnist --lr 1e-3 --batch_size 8
-PORT=29002 CUDA_VISIBLE_DEVICES=2,3 bash tools/dist_train.sh configs/mmnist/PredRNN.py 2 -d mmnist --lr 1e-3 --batch_size 8
-PORT=29003 CUDA_VISIBLE_DEVICES=4,5,6,7 bash tools/dist_train.sh configs/mmnist/PredRNNpp.py 4 -d mmnist --lr 1e-3 --batch_size 4
+PORT=29002 CUDA_VISIBLE_DEVICES=2,3 bash tools/dist_train.sh configs/mmnist/ConvLSTM.py 2 -d mmnist --lr 1e-3 --batch_size 8 --find_unused_parameters
+PORT=29003 CUDA_VISIBLE_DEVICES=4,5,6,7 bash tools/dist_train.sh configs/mmnist/PredRNNpp.py 4 -d mmnist --lr 1e-3 --batch_size 4 --find_unused_parameters
 ```
 
-An example of multiple GPUs testing on Moving MNIST dataset. The bash script is `bash tools/dist_train.sh ${CONFIG_FILE} ${GPUS} ${CHECKPOINT} [optional arguments]`.
+An example of multiple GPUs testing on Moving MNIST dataset. The bash script is `bash tools/dist_train.sh ${CONFIG_FILE} ${GPUS} ${CHECKPOINT} [optional arguments]`, where the first three augments are necessary.
 ```shell
 PORT=29001 CUDA_VISIBLE_DEVICES=0,1 bash tools/dist_test.sh configs/mmnist/simvp/SimVP_gSTA.py 2 work_dirs/mmnist/simvp/SimVP_gSTA -d mmnist
 ```
 
 **Note**:
 * During DDP training, the number of GPUS `ngpus` should be provided, and checkpoints and logs are saved in the same folder structure as the config file under `work_dirs/` (it will be the default setting if `--ex_name` is not specified). The default learning rate `lr` and the batch size `bs` in config files are for a single GPU. If using a different number GPUs, the total batch size will change in proportion, you have to scale the learning rate following `lr = base_lr * ngpus` and `bs = base_bs * ngpus` (known as the `linear scaling rule`). Other arguments should be added as the single GPU training.
-* Experiment results using different GPUs settings will produce different results. We have noticed that single GPU training with DP and DDP setups will produce similar results, while different multiple GPUs using linear scaling rules will cause different results because of DDP training. For example, SimVP+gSTA is trained 200 epochs on MMNIST with `1GPU (DP)`, `1GPU (DDP)`, `2GPUs (2xbs8)`, and `4GPUs (4xbs4)` using the same learning rate (lr=1e-3), we produce results of MSE 26.73, 26.78, 30.01, 31.36. Therefore, we will provide the used GPUs setting in the benchmark result with the corresponding learning rate for fair comparison and reproducible purposes.
+* Experiment results using different GPUs settings will produce different results. We have noticed that single GPU training with DP and DDP setups will produce similar results, while different multiple GPUs using the **linear scaling rule** will cause different results because of DDP training. For example, SimVP+gSTA is trained 200 epochs on MMNIST with `1GPU (DP)`, `1GPU (DDP)`, `2GPUs (2xbs8)`, and `4GPUs (4xbs4)` using the same learning rate (lr=1e-3), we produce results of MSE 26.73, 26.78, 30.01, 31.36. Therefore, we will provide the used GPUs setting in the benchmark result with the corresponding learning rate for fair comparison and reproducible purposes.
+* DDP training and testing error of `WARNING:torch.distributed.elastic.multiprocessing.api:Sending process xxx closing signal SIGTERM` might sometimes occur, caused by PyTorch1.9 to PyTorch1.10. You can use PyTorch1.8 or PyTorch2.0 to get rid of these errors, or conduct `1GPU` experiments.
 
 ## Mixed Precision Training
 
