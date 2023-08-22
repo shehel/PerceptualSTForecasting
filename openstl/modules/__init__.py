@@ -9,7 +9,7 @@ from .phydnet_modules import PhyCell, PhyD_ConvLSTM, PhyD_EncoderRNN, K2M
 from .predrnn_modules import SpatioTemporalLSTMCell
 from .predrnnpp_modules import CausalLSTMCell, GHU
 from .predrnnv2_modules import SpatioTemporalLSTMCellv2
-from .simvp_modules import (BasicConv2d, ConvSC, GroupConv2d,
+from .simvp_modules import (BasicConv2d, ConvSC, GroupConv2d, BasicConv3d, ConvSC3D,
                             ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                             HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
                             SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock)
@@ -21,5 +21,5 @@ __all__ = [
     'BasicConv2d', 'ConvSC', 'GroupConv2d',
     'ConvNeXtSubBlock', 'ConvMixerSubBlock', 'GASubBlock', 'gInception_ST',
     'HorNetSubBlock', 'MLPMixerSubBlock', 'MogaSubBlock', 'PoolFormerSubBlock',
-    'SwinSubBlock', 'UniformerSubBlock', 'VANSubBlock', 'ViTSubBlock',
+    'SwinSubBlock', 'UniformerSubBlock', 'VANSubBlock', 'ViTSubBlock', 'UNetConvBlock', 'UNetUpBlock', 'ConvSC3D'
 ]

@@ -1,6 +1,6 @@
 import torch
 from torch import nn
-from openstl.modules import (ConvSC, ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
+from openstl.modules import (ConvSC, ConvSC3D, ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                            HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
                            SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock)
 
@@ -21,11 +21,24 @@ class SimVP_Model(nn.Module):
         H, W = int(H / 2**(N_S/2)), int(W / 2**(N_S/2))  # downsample 1 / 2**(N_S/2)
 
         self.enc = Encoder(C, hid_S, N_S, spatio_kernel_enc)
-        self.dec = Decoder(hid_S, C-4, N_S, spatio_kernel_dec)
+        self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec)
 
+        #self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec)
+        # self.enc_s = Encoder(1, 16, 2, spatio_kernel_enc)
+        # self.enc_sc = Encoder(16*C, hid_S, 2, spatio_kernel_enc)
+        # self.dec_sc = Decoder(hid_S,16*C,2, spatio_kernel_dec)
+        # self.dec_s = Decoder(16, 1, 2, spatio_kernel_dec)
         model_type = 'gsta' if model_type is None else model_type.lower()
         if model_type == 'incepu':
             self.hid = MidIncepNet(T*hid_S, hid_T, N_T)
+        elif model_type == 'unet':
+            self.hid = UnetNet(T*hid_S, N_T, hid_T)
+        elif model_type == 'conv3d':
+            self.hid = Mid3DNet(hid_S, hid_T, N_T,
+                input_resolution=(H, W), model_type=model_type,
+                mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+
+
         else:
             self.hid = MidMetaNet(T*hid_S, hid_T, N_T,
                 input_resolution=(H, W), model_type=model_type,
@@ -33,21 +46,64 @@ class SimVP_Model(nn.Module):
 
     def forward(self, x_raw):
         B, T, C, H, W = x_raw.shape
+        # x = x_raw.reshape(B*T*C, 1, H, W)
+        # x, skip = self.enc_s(x)
+        # x = x.reshape(B*T, 16*C, 64, 64)
+        # embed, skip1 = self.enc_sc(x)
         x = x_raw.view(B*T, C, H, W)
 
         embed, skip = self.enc(x)
         _, C_, H_, W_ = embed.shape
 
         z = embed.view(B, T, C_, H_, W_)
-        hid = self.hid(z)
-        hid = hid.reshape(B*T, C_, H_, W_)
-
+        encoded = self.hid(z)
+        hid = encoded.reshape(B*T, C_, H_, W_)
         Y = self.dec(hid, skip)
-        Y = Y.reshape(B, T, C-4, H, W)
+        Y = Y.reshape(B, T, C, H, W)
 
+        #Y = Y.reshape(B, T, C, H, W)
+        #
+
+        # Y = self.dec_sc(hid, skip1)
+        # Y = Y.reshape(B*T*C, 16, 64, 64)
+        # Y = self.dec_s(Y, skip)
+        # Y = Y.reshape(B, T, C, H, W)
+        # Y = Y[:,:,0::2]
+        return (Y,encoded)
+
+    def recon(self, x_raw):
+        B, T, C, H, W = x_raw.shape
+        # x = x_raw.reshape(B*T*C, 1, H, W)
+        # x, skip = self.enc_s(x)
+        # x = x.reshape(B*T, 16*C, 64, 64)
+        # embed, skip1 = self.enc_sc(x)
+        x = x_raw.view(B*T, C, H, W)
+
+        embed, skip = self.enc(x)
+
+        Y = self.dec(embed, skip)
+        Y = Y.reshape(B, T, C, H, W)
+
+        #Y = Y.reshape(B, T, C, H, W)
+        #
+
+        # Y = self.dec_sc(hid, skip1)
+        # Y = Y.reshape(B*T*C, 16, 64, 64)
+        # Y = self.dec_s(Y, skip)
+        # Y = Y.reshape(B, T, C, H, W)
+        # Y = Y[:,:,0::2]
         return Y
+    def encode(self, x_raw):
+        B, T, C, H, W = x_raw.shape
+        x = x_raw.view(B*T, C, H, W)
 
+        embed, skip = self.enc(x)
+        _, C_, H_, W_ = embed.shape
 
+        z = embed.view(B, T, C_, H_, W_)
+        z = self.hid(z)
+
+        return z
 def sampling_generator(N, reverse=False):
     samplings = [False, True] * (N // 2)
     if reverse: return list(reversed(samplings[:N]))
@@ -188,6 +244,9 @@ class MetaBlock(nn.Module):
         elif model_type == 'vit':
             self.block = ViTSubBlock(
                 in_channels, mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+        elif model_type == 'conv3d':
+            self.block = ConvSC3D(
+                in_channels, in_channels, kernel_size=3)
         else:
             assert False and "Invalid model_type in SimVP"
 
@@ -237,3 +296,42 @@ class MidMetaNet(nn.Module):
 
         y = z.reshape(B, T, C, H, W)
         return y
+
+class Mid3DNet(nn.Module):
+    """The hidden Translator of MetaFormer for SimVP"""
+
+    def __init__(self, channel_in, channel_hid, N2,
+                 input_resolution=None, model_type=None,
+                 mlp_ratio=4., drop=0.0, drop_path=0.1):
+        super(Mid3DNet, self).__init__()
+        assert N2 >= 2 and mlp_ratio > 1
+        self.N2 = N2
+        dpr = [  # stochastic depth decay rule
+            x.item() for x in torch.linspace(1e-2, drop_path, self.N2)]
+
+        # downsample
+        enc_layers = [MetaBlock(
+            channel_in, channel_hid, input_resolution, model_type,
+            mlp_ratio, drop, drop_path=dpr[0], layer_i=0)]
+        # middle layers
+        for i in range(1, N2-1):
+            enc_layers.append(MetaBlock(
+                channel_hid, channel_hid, input_resolution, model_type,
+                mlp_ratio, drop, drop_path=dpr[i], layer_i=i))
+        # upsample
+        enc_layers.append(MetaBlock(
+            channel_hid, channel_in, input_resolution, model_type,
+            mlp_ratio, drop, drop_path=drop_path, layer_i=N2-1))
+        self.enc = nn.Sequential(*enc_layers)
+
+    def forward(self, x):
+        B, T, C, H, W = x.shape
+        # re`shape so that the 2nd dimension becomes first and first becomes second using permute
+        z = x.permute(0, 2, 1, 3, 4)
+
+        for i in range(self.N2):
+            z = self.enc[i](z)
+
+        # permute back
+        z = z.permute(0, 2, 1, 3, 4)
+        return z

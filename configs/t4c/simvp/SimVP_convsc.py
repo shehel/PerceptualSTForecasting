@@ -1,7 +1,7 @@
 method = 'SimVP'
 spatio_kernel_enc = 3
 spatio_kernel_dec = 3
-model_type = 'gSTA'
+model_type = 'convsc'
 hid_S = 32
 hid_T = 256
 N_T = 3
@@ -12,4 +12,4 @@ drop_path = 0.1
 root_dir = "7days"
 data_root = "7days"
 workers = 4
-epochs = 30
+epochs = 200

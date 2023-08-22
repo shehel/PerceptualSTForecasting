@@ -20,7 +20,85 @@ from torch import distributed as dist
 import openstl
 from .config_utils import Config
 
+import pdb
 
+def row_standardization(matrix):
+    # Calculate mean and standard deviation along axis 1 (rows)
+    mean = torch.mean(matrix, dim=1, keepdim=True)
+    std = torch.std(matrix, dim=1, keepdim=True)
+
+    # Apply row-wise standardization
+    standardized_matrix = (matrix - mean) / (std + 1e-7)  # Adding a small epsilon to avoid division by zero
+
+    return standardized_matrix
+
+def calculate_ratios(image_timeseries):
+    # image_timeseries shape: (batch, 6, 1, 128, 128)
+
+    # Step 1: Sum the pixel values for each timestep
+    pixel_sums_per_timestep = torch.sum(image_timeseries, dim=(2, 3, 4))  # Shape: (batch, 6)
+
+    # Step 2: Calculate the ratios
+    total_pixel_sum = torch.sum(pixel_sums_per_timestep, dim=1, keepdim=True)  # Shape: (batch, 1)
+
+    # Add a small epsilon to avoid division by zero
+    epsilon = 1e-8
+    ratios = pixel_sums_per_timestep / (total_pixel_sum + epsilon)
+
+    return ratios
+
+class DifferentialDivergenceLoss(nn.Module):
+    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=2000):
+        super(DifferentialDivergenceLoss, self).__init__()
+        self.tau = tau
+        self.epsilon = epsilon
+        self.w1, self.w2, self.w3, self.w4, self.w5 = w1, w2, w3, w4, w5
+        #self.main_loss = nn.L1Loss()
+        self.main_loss = nn.MSELoss()
+
+    def forward(self, pred, true):
+        # mae loss using functional
+        mse_loss = self.main_loss(pred, true)
+        # sum_1 = torch.sum(pred, dim=(3,4))[:,:,0]
+        # sum_2 = torch.sum(true, dim=(3,4))[:,:,0]
+        # sum_1 = row_standardization(sum_1)
+        # sum_2 = row_standardization(sum_2)
+        # sum_loss = self.main_loss(sum_1, sum_2)
+        true_ratios = calculate_ratios(true)
+        predicted_ratios = calculate_ratios(pred)
+        sum_loss = self.main_loss(true_ratios,predicted_ratios)
+
+
+        #pred_prob = F.softmax(sum_1, dim=1)
+        #true_prob = F.softmax(sum_2, dim=1)
+
+        # do kl div loss on pred_prob and true_prob using F.kl_div
+        #sum_loss = F.kl_div(torch.log(pred_prob + self.epsilon), true_prob, reduction='batchmean')
+
+        std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
+
+        pred_diff = pred[:, 1:] - pred[:, :-1]
+        true_diff = true[:, 1:] - true[:, :-1]
+        #pred_diff = pred_diff.view(pred_diff.shape[0], pred_diff.shape[1], -1)
+        #true_diff = true_diff.reshape(true_diff.shape[0], true_diff.shape[1], -1)
+
+        #pred_prob = F.softmax(pred_diff / self.tau, dim=2)
+        #true_prob = F.softmax(true_diff / self.tau, dim=2)
+        reg_mse = F.mse_loss(pred_diff, true_diff)
+        reg_std = F.mse_loss(torch.std(pred_diff, dim=1), torch.std(true_diff,dim=1))
+
+        # get KL between pred_prob and true_prob
+        #sum_loss = torch.sum(true_prob * torch.log(true_prob / pred_prob), dim=1).mean()
+
+        #sum_loss = self.main_loss(pred_prob, true_prob)
+
+        train_loss = self.w1 * mse_loss + self.w2 * reg_mse + self.w3 * reg_std + self.w4 * std_loss + self.w5*sum_loss
+        # check if train loss is nan
+        if torch.any(torch.isnan(train_loss)):
+            pdb.set_trace()
+        total_loss = mse_loss + reg_mse + reg_std + std_loss + self.w5 * sum_loss
+
+        return train_loss, total_loss,  mse_loss, reg_mse, reg_std, std_loss, sum_loss*self.w5
 def set_seed(seed, deterministic=False):
     """Set random seed.
 

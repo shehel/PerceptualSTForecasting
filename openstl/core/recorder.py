@@ -3,20 +3,22 @@ import torch
 
 
 class Recorder:
-    def __init__(self, verbose=False, delta=0):
+    def __init__(self, verbose=False, delta=0, warmup=20):
         self.verbose = verbose
         self.best_score = None
         self.val_loss_min = np.Inf
         self.delta = delta
+        self.warmup = warmup
 
-    def __call__(self, val_loss, model, path):
-        score = -val_loss
-        if self.best_score is None:
-            self.best_score = score
-            self.save_checkpoint(val_loss, model, path)
-        elif score >= self.best_score + self.delta:
-            self.best_score = score
-            self.save_checkpoint(val_loss, model, path)
+    def __call__(self, val_loss, model, path, epoch):
+        if epoch > self.warmup:
+            score = -val_loss
+            if self.best_score is None:
+                self.best_score = score
+                self.save_checkpoint(val_loss, model, path)
+            elif score >= self.best_score + self.delta:
+                self.best_score = score
+                self.save_checkpoint(val_loss, model, path)
 
     def save_checkpoint(self, val_loss, model, path):
         if self.verbose:

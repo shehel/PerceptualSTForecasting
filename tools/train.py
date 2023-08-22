@@ -36,6 +36,9 @@ if __name__ == '__main__':
         config = update_config(config, load_config(cfg_path),
                                exclude_keys=['method', 'batch_size', 'val_batch_size', 'sched',
                                              'drop_path', 'warmup_epoch', 'data_root'])
+
+    task = Task.init(project_name='simvp/e1/q3', task_name=config['ex_name'])
+    task.connect_configuration(config)
     # set multi-process settings
     setup_multi_processes(config)
 

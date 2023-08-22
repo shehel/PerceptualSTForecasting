@@ -8,6 +8,7 @@ from pathlib import Path
 
 from clearml import Dataset
 import pdb
+from scipy.stats import bernoulli
 # implement a load_h5_file function
 def load_h5_file(file_path, sl = None, to_torch = False) -> np.ndarray:
     """Given a file path to an h5 file assumed to house a tensor, load that
@@ -34,6 +35,54 @@ def load_h5_file(file_path, sl = None, to_torch = False) -> np.ndarray:
 
 MAX_TEST_SLOT_INDEX = 240
 
+def create_binary_mask(frame, epsilon=1e-5):
+    """
+    Create a binary mask by sampling pixels from the input frame with probability proportional to their intensity values.
+
+    Parameters:
+        frame (numpy.ndarray): Input 128x128 frame containing values in the range 0-255.
+        epsilon (float): A small value to add to the normalized intensity values to make the function numerically stable.
+                         Default is 1e-5.
+
+    Returns:
+        numpy.ndarray: Binary mask of the same shape as the input frame with randomly activated pixels.
+    """
+    # Normalize the frame to have values in the range [0, 1]
+    normalized_frame = frame / 255.0
+    mask = np.random.binomial(1, normalized_frame, size=normalized_frame.shape)
+
+    # Add epsilon to the normalized intensity values to ensure numerical stability
+
+    # Create a binary mask using Bernoulli sampling with probabilities equal to the normalized intensity values
+
+    return mask.astype(int)
+
+def find_largest(matrix, topk):
+    # Flatten the matrix to a 1D array
+    flat_matrix = matrix.flatten()
+
+    # Sort the array in descending order
+    sorted_indices = np.argsort(flat_matrix)[::-1]
+
+    # Set the largest 1000 values to 1 and the rest to 0
+    modified_array = np.zeros_like(flat_matrix)
+    modified_array[sorted_indices[:topk]] = 1
+
+    # Reshape the modified array back to the original matrix shape
+    modified_matrix = modified_array.reshape(matrix.shape)
+
+    return modified_matrix
+
+def activate_code(probability):
+    """
+    Activate a piece of code with a defined probability using Bernoulli sampling from scipy.
+
+    :param probability: The probability of activation (between 0 and 1).
+    :return: True if the code should be activated, False otherwise.
+    """
+    rv = bernoulli(probability)
+    return rv.rvs() == 1
+
 class T4CDataset(Dataset):
     """Taxibj <https://arxiv.org/abs/1610.00081>`_ Dataset"""
 
@@ -55,6 +104,12 @@ class T4CDataset(Dataset):
         if self.file_filter is None:
             self.file_filter = "**/training/*8ch.h5"
 
+        self.static_filter = "**/*_static.h5"
+        self.static_dict = {}
+        self.file_data = []
+        self.file_list = []
+        self.probability = 0.07
+
     def __len__(self):
         return self.X.shape[0]
 
@@ -67,6 +122,13 @@ class T4CDataset(Dataset):
         self.file_list = list(Path(self.root_dir).rglob(self.file_filter))
         self.file_list.sort()
         self.len = len(self.file_list) * MAX_TEST_SLOT_INDEX
+        static_list = list(Path(self.root_dir).rglob(self.static_filter))
+
+
+        for city in static_list:
+            self.static_dict[city.parts[-2]] = load_h5_file(city)
+        for i, file in enumerate(self.file_list):
+            self.file_data.append(load_h5_file(file))
 
     def _load_h5_file(self, fn, sl):
         return load_h5_file(fn, sl=sl)
@@ -83,51 +145,82 @@ class T4CDataset(Dataset):
         start_hour = idx % MAX_TEST_SLOT_INDEX
 
         
-        two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
+        #two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
+        two_hours = self.file_data[file_idx][start_hour:start_hour + self.pre_seq_length * 2 + 1]
+        #two_hours = (two_hours - np.min(two_hours)) * (200 / (np.max(two_hours) - np.min(two_hours)))
+        #
+        #two_hours = (two_hours - two_hours.min()) / (two_hours.max() - two_hours.min())
+
+        # Rescale values to be between 50 and 200
+        #two_hours = 0 + (two_hours * (20 - 0))
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
         if self.test:
-            random_int_x = 10#
-            random_int_y = 40
+            random_int_x = 255
+            random_int_y = 124
         else:
             random_int_x = random.randint(0, 300)
             random_int_y = random.randint(0, 300)
         two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
                     random_int_y:random_int_y+128, ]
 
-        #input_data, output_data = prepare_test(two_hours)
+        #two_hours = (two_hours - self.m) / self.s
     
         dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
-        #print (dynamic_input[:, 123-10, 61-40, 5])
-        #print (output_data[:,123-10, 61-40, 5])
+        #static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
+        #static_ch = static_ch/255
+        static_ch = np.mean(dynamic_input[:,4,:,:], axis=0)
+        output_data = output_data[:,0::1,:,:]
+        if self.test:
+            static_ch = np.where(static_ch > 0.5, 1,0)
+        else:
+            static_ch = np.where(static_ch > 0.5, 1,0)
 
-        # channels selection
-        output_data = output_data[:,1::2,:,:]
 
-        return dynamic_input, output_data 
+        static_ch = static_ch[np.newaxis, np.newaxis, :, :]
+        
+
+        # zero out all but [:,:,52,76] in output_data
+        # dynamic_input[:,:,0:52,:] = 0
+        # dynamic_input[:,:,53:,:] = 0
+        # dynamic_input[:,:,:,0:76] = 0
+        # dynamic_input[:,:,:,77:] = 0
+
+        # zero out static channels
+        static_ch[:,:,0:52,:] = 0
+        static_ch[:,:,53:,:] = 0
+        static_ch[:,:,:,0:76] = 0
+        static_ch[:,:,:,77:] = 0
+
+
+        return dynamic_input, output_data, static_ch
 
 def train_collate_fn(batch):
-    dynamic_input_batch, target_batch = zip(*batch)
+    dynamic_input_batch, target_batch, static_batch = zip(*batch)
     dynamic_input_batch = np.stack(dynamic_input_batch, axis=0)
+    static_batch = np.stack(static_batch, axis=0)
     target_batch = np.stack(target_batch, axis=0)
     dynamic_input_batch = torch.from_numpy(dynamic_input_batch).float()
     target_batch = torch.from_numpy(target_batch).float()
+    static_batch = torch.from_numpy(static_batch).float()
 
 
-    return dynamic_input_batch, target_batch
+    return dynamic_input_batch, target_batch, static_batch
 
 
 def load_data(batch_size, val_batch_size, data_root,
               num_workers=0, pre_seq_length=None, aft_seq_length=None,
               in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
+
     try:
-        data_root = Dataset.get(dataset_project="t4c", dataset_name=data_root).get_local_copy()
+        data_root = Dataset.get(dataset_id="59b1fd80e3274676aeba314c832bbd85").get_local_copy()
+        #data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
     train_filter = "**/training/*8ch.h5"
     val_filter = "**/validation/*8ch.h5"
-    train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length)
-    val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length)
+    train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
+    val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
     test_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
 
     train_set._load_dataset()
@@ -135,8 +228,20 @@ def load_data(batch_size, val_batch_size, data_root,
     test_set._load_dataset()
 
     
-    test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
-    test_set.len = 240
+    #test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/ANTWERP/training/2020-04-25_ANTWERP_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/BERLIN/training/2019-06-25_BERLIN_8ch.h5')]
+    test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/BERLIN/training/2019-06-25_BERLIN_8ch.h5'),]
+                          #Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2020-06-25_MOSCOW_8ch.h5'),
+                          #  Path('/home/jeschneider/Documents/data/raw/ISTANBUL/training/2019-06-25_ISTANBUL_8ch.h5'),
+                          #  Path('/home/jeschneider/Documents/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5'),]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2020-06-25_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-04-06_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+    #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
+
+    test_set.len = 240*len(test_set.file_list)
     dataloader_train = torch.utils.data.DataLoader(train_set,
                                                    batch_size=batch_size, shuffle=True,
                                                    pin_memory=True, drop_last=True,

@@ -38,8 +38,8 @@ class BasicConv2d(nn.Module):
 
         #self.norm = nn.GroupNorm(2, out_channels)
         self.norm = nn.BatchNorm2d(out_channels)
-        self.act = nn.SiLU(True)
-        #self.act = nn.ReLU(True)
+        #self.act = nn.SiLU(True)
+        self.act = nn.ReLU(inplace=True)
 
         self.apply(self._init_weights)
 
@@ -76,6 +76,69 @@ class ConvSC(nn.Module):
         y = self.conv(x)
         return y
 
+### 3D Conv
+
+class BasicConv3d(nn.Module):
+    def __init__(self,
+                 in_channels,
+                 out_channels,
+                 kernel_size=3,
+                 stride=1,
+                 padding=0,
+                 dilation=1,
+                 upsampling=False,
+                 act_norm=False):
+        super(BasicConv3d, self).__init__()
+        self.act_norm = act_norm
+        if upsampling is True:
+            self.conv = nn.Sequential(*[
+                nn.Conv3d(in_channels, out_channels*4, kernel_size=kernel_size,
+                          stride=1, padding=padding, dilation=dilation),
+                nn.PixelShuffle(2)
+            ])
+        else:
+            self.conv = nn.Conv3d(
+                in_channels, out_channels, kernel_size=kernel_size,
+                stride=stride, padding=padding, dilation=dilation)
+
+        self.norm = nn.BatchNorm3d(out_channels)
+        self.act = nn.ReLU(inplace=True)
+
+        self.apply(self._init_weights)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv3d)):
+            nn.init.trunc_normal_(m.weight, std=0.02)
+            nn.init.constant_(m.bias, 0)
+
+    def forward(self, x):
+        y = self.conv(x)
+        if self.act_norm:
+            y = self.act(self.norm(y))
+        return y
+
+
+class ConvSC3D(nn.Module):
+    def __init__(self,
+                 C_in,
+                 C_out,
+                 kernel_size=3,
+                 downsampling=False,
+                 upsampling=False,
+                 act_norm=True):
+        super(ConvSC3D, self).__init__()
+
+        stride = 2 if downsampling is True else 1
+        padding = (kernel_size - stride + 1) // 2
+
+        self.conv = BasicConv3d(C_in, C_out, kernel_size=kernel_size, stride=stride,
+                                upsampling=upsampling, padding=padding, act_norm=act_norm)
+
+    def forward(self, x):
+        y = self.conv(x)
+        return y
+
+####
 
 class GroupConv2d(nn.Module):
 

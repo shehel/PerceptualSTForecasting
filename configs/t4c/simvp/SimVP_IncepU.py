@@ -8,3 +8,7 @@ N_T = 8
 N_S = 4
 lr = 1e-3
 batch_size = 16
+root_dir = "7days"
+data_root = "7days"
+workers = 4
+epochs = 30

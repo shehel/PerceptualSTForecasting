@@ -1,6 +1,7 @@
 # Copyright (c) CAIRI AI Lab. All rights reserved
 
 import os
+import io
 import os.path as osp
 import time
 import logging
@@ -17,14 +18,14 @@ from openstl.methods import method_maps
 from openstl.utils import (set_seed, print_log, output_namespace, check_dir, collect_env,
                            init_dist, init_random_seed,
                            get_dataset, get_dist_info, measure_throughput, weights_to_cpu)
-
+from clearml import Task, OutputModel
 try:
     import nni
     has_nni = True
 except ImportError: 
     has_nni = False
 
-
+import pdb
 class BaseExperiment(object):
     """The basic class of PyTorch training and evaluation."""
 
@@ -44,6 +45,7 @@ class BaseExperiment(object):
         self._rank = 0
         self._world_size = 1
         self._dist = self.args.dist
+        self.losses = ['val_train_loss', 'val_total_loss', 'val_main_loss', 'val_reg_loss', "val_div_loss", 'val_std_div', 'val_sum']
 
         self._preparation()
         if self._rank == 0:
@@ -90,8 +92,22 @@ class BaseExperiment(object):
 
         # log and checkpoint
         base_dir = self.args.res_dir if self.args.res_dir is not None else 'work_dirs'
+        try:
+            task = Task.get_task(task_id=self.args.ex_name)
+            model_path = task.artifacts['best_model_weights'].get_local_copy()
+            #model_path = task.artifacts['latest_model_weights'].get_local_copy()
+            # copy the model at location self.path to ./work_dirs/task.name
+            # but make the dir before if it doesnt exist
+            if not os.path.exists(f"{base_dir}/{task.name}"):
+                os.makedirs(f"{base_dir}/{task.name}/checkpoints")
+            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
+            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
+            self.args.ex_name = task.name
+        except:
+            print ("Not a clearml task. Using local directory")
+
         self.path = osp.join(base_dir, self.args.ex_name if not self.args.ex_name.startswith(self.args.res_dir) \
-            else self.args.ex_name.split(self.args.res_dir+'/')[-1])
+        else self.args.ex_name.split(self.args.res_dir+'/')[-1])
         self.checkpoints_path = osp.join(self.path, 'checkpoints')
         if self._rank == 0:
             check_dir(self.path)
@@ -102,13 +118,13 @@ class BaseExperiment(object):
             with open(sv_param, 'w') as file_obj:
                 json.dump(self.args.__dict__, file_obj)
 
-            for handler in logging.root.handlers[:]:
-                logging.root.removeHandler(handler)
-            timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
-            prefix = 'train' if not self.args.test else 'test'
-            logging.basicConfig(level=logging.INFO,
-                                filename=osp.join(self.path, '{}_{}.log'.format(prefix, timestamp)),
-                                filemode='a', format='%(asctime)s - %(message)s')
+        for handler in logging.root.handlers[:]:
+            logging.root.removeHandler(handler)
+        timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
+        prefix = 'train' if not self.args.test else 'test'
+        logging.basicConfig(level=logging.INFO,
+                            filename=osp.join(self.path, '{}_{}.log'.format(prefix, timestamp)),
+                            filemode='a', format='%(asctime)s - %(message)s')
 
         # log env info
         env_info_dict = collect_env()
@@ -135,6 +151,7 @@ class BaseExperiment(object):
         if self.args.auto_resume:
             self.args.resume_from = osp.join(self.checkpoints_path, 'latest.pth')
         if self.args.resume_from is not None:
+
             self._load(name=self.args.resume_from)
         self.call_hook('before_run')
 
@@ -222,10 +239,10 @@ class BaseExperiment(object):
         if not isinstance(checkpoint, dict):
             raise RuntimeError(f'No state_dict found in checkpoint file {filename}')
         self._load_from_state_dict(checkpoint['state_dict'])
-        if checkpoint.get('epoch', None) is not None:
-            self._epoch = checkpoint['epoch']
-            self.method.model_optim.load_state_dict(checkpoint['optimizer'])
-            self.method.scheduler.load_state_dict(checkpoint['scheduler'])
+        # if checkpoint.get('epoch', None) is not None:
+        #     self._epoch = checkpoint['epoch']
+        #     self.method.model_optim.load_state_dict(checkpoint['optimizer'])
+        #     self.method.scheduler.load_state_dict(checkpoint['scheduler'])
 
     def _load_from_state_dict(self, state_dict):
         if self._dist:
@@ -286,7 +303,7 @@ class BaseExperiment(object):
             if self._dist and hasattr(self.train_loader.sampler, 'set_epoch'):
                 self.train_loader.sampler.set_epoch(epoch)
 
-            num_updates, loss_mean, eta = self.method.train_one_epoch(self, self.train_loader,
+            num_updates, loss_mean, loss_mse, loss_reg, loss_div, loss_divs, loss_total, loss_sum, eta = self.method.train_one_epoch(self, self.train_loader,
                                                                       epoch, num_updates, eta)
 
             self._epoch = epoch
@@ -294,11 +311,21 @@ class BaseExperiment(object):
                 cur_lr = self.method.current_lr()
                 cur_lr = sum(cur_lr) / len(cur_lr)
                 with torch.no_grad():
-                    vali_loss = self.vali(self.vali_loader)
+                    vali_loss, eval_res = self.vali(self.vali_loader, logger, epoch)
 
                 if self._rank == 0:
                     print_log('Epoch: {0}, Steps: {1} | Lr: {2:.7f} | Train Loss: {3:.7f} | Vali Loss: {4:.7f}\n'.format(
                         epoch + 1, len(self.train_loader), cur_lr, loss_mean.avg, vali_loss))
+                    logger.report_scalar(title='Training Report', 
+                        series='Train Loss', value=loss_mean.avg, iteration=epoch)
+                    logger.report_scalar(title='Training Report', 
+                        series='Train MSE Loss', value=loss_mse.avg, iteration=epoch)
+                    logger.report_scalar(title='Training Report', 
+                        series='Train Reg Loss', value=loss_reg.avg, iteration=epoch)
+
+                    logger.report_scalar(title='Training Report', 
+                        series='Val Loss', value=vali_loss, iteration=epoch)
+
                     recorder(vali_loss, self.method.model, self.path)
                     self._save(name='latest')
             if self._use_gpu and self.args.empty_cache:
@@ -311,10 +338,32 @@ class BaseExperiment(object):
         time.sleep(1)  # wait for some hooks like loggers to finish
         self.call_hook('after_run')
 
-    def vali(self, vali_loader):
+
+    def vali(self, vali_loader, logger, epoch):
         """A validation loop during training"""
         self.call_hook('before_val_epoch')
         preds, trues, val_loss = self.method.vali_one_epoch(self, self.vali_loader)
+        for loss, name in zip(val_loss, self.losses):
+            logger.report_scalar(title='Training Report',
+                        series=name, value=loss.cpu().numpy(), iteration=epoch)
+
+        plot_tmaps(trues[200,:,0,:,:,np.newaxis], preds[200,:,0,:,:,np.newaxis], epoch, logger)
+
+        for i in [[52,76],[73,54],[76,101],[100,105]]:
+            plt.plot(trues[200,:,0,i[0],i[1]], label="True")
+            plt.plot(preds[200,:,0,i[0],i[1]], label="Preds")
+            plt.legend()
+            fig = plt.gcf()  # Get the current figure
+
+            logger.report_matplotlib_figure(
+                "px_"+str(i),
+                "true and pred",
+                iteration=epoch,
+                figure = fig,
+                report_image = True,
+               report_interactive = True
+                )
+            plt.close()
         self.call_hook('after_val_epoch')
 
         if self._rank == 0:
@@ -329,20 +378,35 @@ class BaseExperiment(object):
             if has_nni:
                 nni.report_intermediate_result(eval_res['mse'])
 
-        return val_loss
+        return val_loss[0].cpu().numpy(), eval_res
 
     def test(self):
         """A testing loop of STL methods"""
         if self.args.test:
             best_model_path = osp.join(self.path, 'checkpoint.pth')
+            #best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
             self._load_from_state_dict(torch.load(best_model_path))
+            #self._load(best_model_path)
+
 
         self.call_hook('before_val_epoch')
-        inputs, trues, preds = self.method.test_one_epoch(self, self.test_loader)
+        inputs, preds, trues = self.method.test_one_epoch(self, self.test_loader)
         self.call_hook('after_val_epoch')
 
-        trues = trues[:,:,1:2, 62-10,92-40]
-        preds=  preds[:,:,1:2, 62-10,92-40]
+        # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
+        
+        inp_sum = inputs[:,:,0::2].sum(axis=1, keepdims=True)
+        mask = (inp_sum > 0).astype(np.float32)
+        
+        
+        #trues = trues[:,:,0::2]
+        #preds = preds[:,:,0::2]
+        #trues = trues[:,:,2:3]#, 62-10,92-40]
+        trues = trues[:,:,:]# 62-10,92-40]
+        # multiply mask by preds
+        preds = preds #* mask
+        #preds=  preds[:,:,2:3]#, 62-10,92-40]
+        preds=  preds[:,:,:]#, 62-10,92-40]
 
         if 'weather' in self.args.dataname:
             metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
@@ -354,10 +418,14 @@ class BaseExperiment(object):
 
         if self._rank == 0:
             print_log(eval_log)
-            folder_path = osp.join(self.path, 'saved')
+            folder_path = osp.join(self.path, 'saved_comb_training')
             check_dir(folder_path)
 
-            for np_data in ['metrics', 'inputs', 'trues', 'preds']:
-                np.save(osp.join(folder_path, np_data + '.npy'), vars()[np_data])
-
+            # check if self.args.exp_name ends with unet
+            if self.args.ex_name.endswith('unet'):
+                for np_data in ['metrics', 'inputs', 'trues', 'preds']:
+                    np.save(osp.join(folder_path, np_data + '.npy'), vars()[np_data])
+            else:
+                for np_data in ['metrics', 'trues', 'preds']:
+                    np.save(osp.join(folder_path, np_data + '.npy'), vars()[np_data])
         return eval_res['mse']
