@@ -15,3 +15,4 @@ filter_size = 5
 stride = 1
 patch_size = 2
 layer_norm = 0
+data_root = '7days'

@@ -8,6 +8,7 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, dist
         distributed=dist,
         use_augment=kwargs.get('use_augment', False),
         use_prefetcher=kwargs.get('use_prefetcher', False),
+        
     )
     if dataname == 'human':
         from .dataloader_human import load_data
@@ -26,7 +27,8 @@ def load_data(dataname, batch_size, val_batch_size, num_workers, data_root, dist
         return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
     elif dataname == 't4c':
         from .dataloader_t4c import load_data
-        return load_data(batch_size, val_batch_size, data_root, num_workers, **cfg_dataloader)
+        return load_data(batch_size, val_batch_size, data_root, num_workers, 
+                         perm_bool=kwargs.get('perm_bool', False), **cfg_dataloader)
     elif 'weather' in dataname:  # 'weather', 'weather_t2m', etc.
         from .dataloader_weather import load_data
         data_split_pool = ['5_625', '2_8125', '1_40625']

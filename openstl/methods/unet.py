@@ -1,15 +1,18 @@
 import time
 import torch
 import torch.nn as nn
+import torch.nn.functional as F
+
 from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import UNet_Model
-from openstl.utils import reduce_tensor
+from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
 from .base_method import Base_method
 
 from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
 import pdb
+
 class UNet(Base_method):
     r"""SimVP
 
@@ -43,9 +46,9 @@ class UNet(Base_method):
 
         # move axis from source=4 to destination=2 for the batch_x torch tensor
         if self.args.aft_seq_length == self.args.pre_seq_length:
-            pred_y = self.model(batch_x)
+            pred_y, translated = self.model(batch_x)
         elif self.args.aft_seq_length < self.args.pre_seq_length:
-            pred_y = self.model(batch_x)
+            pred_y, translated = self.model(batch_x)
             pred_y = pred_y[:, :self.args.aft_seq_length]
         elif self.args.aft_seq_length > self.args.pre_seq_length:
             pred_y = []
@@ -62,7 +65,7 @@ class UNet(Base_method):
                 pred_y.append(cur_seq[:, :m])
             
             pred_y = torch.cat(pred_y, dim=1)
-        return pred_y
+        return pred_y, translated
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
@@ -180,6 +183,8 @@ class UNet(Base_method):
 
             if self.rank == 0:
                 log_buffer = 'train loss: {:.4f}'.format(loss.item())
+                log_buffer += ' | train mse loss: {:.4f}'.format(mse_loss.item())
+                log_buffer += ' | train reg loss: {:.4f}'.format(reg_loss.item())
                 log_buffer += ' | data time: {:.4f}'.format(data_time_m.avg)
                 train_pbar.set_description(log_buffer)
 

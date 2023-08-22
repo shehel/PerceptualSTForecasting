@@ -153,7 +153,7 @@ class Base_method(object):
             prog_bar.update()
             if self.args.empty_cache:
                 torch.cuda.empty_cache()
-
+            
         results_all = {}
         for k in results[0].keys():
             results_all[k] = np.concatenate(
@@ -178,6 +178,7 @@ class Base_method(object):
 <<<<<<< HEAD
 
         preds = torch.tensor(results['preds'])
+        results['trues'] = results['trues'][:,:,0::2]
         trues = torch.tensor(results['trues'])
         losses_m = self.criterion(preds, trues).cpu().numpy()
 =======

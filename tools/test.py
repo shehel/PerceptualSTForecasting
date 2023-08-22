@@ -7,6 +7,7 @@ from openstl.api import BaseExperiment
 from openstl.utils import (create_parser, get_dist_info, load_config,
                            setup_multi_processes, update_config)
 
+from clearml import Task
 try:
     import nni
     has_nni = True
@@ -27,11 +28,13 @@ if __name__ == '__main__':
                            exclude_keys=['method', 'batch_size', 'val_batch_size', 'data_root'])
     config['test'] = True
 
+    task = Task.init(project_name='simvp/test', task_name=config['ex_name']+"_test")
+    task.connect_configuration(config)
     # set multi-process settings
     setup_multi_processes(config)
 
     print('>'*35 + ' testing  ' + '<'*35)
-    exp = BaseExperiment(args)
+    exp = BaseExperiment(args, task)
     rank, _ = get_dist_info()
 
     mse = exp.test()

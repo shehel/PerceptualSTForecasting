@@ -12,7 +12,7 @@ from .predrnnv2_modules import SpatioTemporalLSTMCellv2
 from .simvp_modules import (BasicConv2d, ConvSC, GroupConv2d, BasicConv3d, ConvSC3D,
                             ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                             HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
-                            SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock)
+                            SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock, UNetConvBlock, UNetUpBlock)
 
 __all__ = [
     'ConvLSTMCell', 'CausalLSTMCell', 'GHU', 'SpatioTemporalLSTMCell', 'SpatioTemporalLSTMCellv2',

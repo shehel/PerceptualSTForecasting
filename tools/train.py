@@ -2,13 +2,13 @@
 
 import os.path as osp
 import warnings
-import pdb
+from clearml import Task
 warnings.filterwarnings('ignore')
 
 from openstl.api import BaseExperiment
 from openstl.utils import (create_parser, get_dist_info, load_config,
                            setup_multi_processes, update_config)
-
+import pdb
 try:
     import nni
     has_nni = True
@@ -17,10 +17,10 @@ except ImportError:
 import torch
 
 if __name__ == '__main__':
+
     parser = create_parser()
     parser.add_argument("--local-rank", type=int)
     args = parser.parse_args()
-    torch.cuda.set_device(args.local_rank)
     config = args.__dict__
 
     if has_nni:
@@ -31,7 +31,7 @@ if __name__ == '__main__':
         if args.config_file is None else args.config_file
     if args.overwrite:
         config = update_config(config, load_config(cfg_path),
-                               exclude_keys=['method', 'data_root'])
+                               exclude_keys=['method', 'data_root', 'perm'])
     else:
         config = update_config(config, load_config(cfg_path),
                                exclude_keys=['method', 'batch_size', 'val_batch_size', 'sched',
@@ -40,10 +40,12 @@ if __name__ == '__main__':
     task = Task.init(project_name='simvp/e1/q3', task_name=config['ex_name'])
     task.connect_configuration(config)
     # set multi-process settings
+
+    torch.cuda.set_device(args.local_rank)
     setup_multi_processes(config)
 
     print('>'*35 + ' training ' + '<'*35)
-    exp = BaseExperiment(args)
+    exp = BaseExperiment(args, task)
     rank, _ = get_dist_info()
     exp.train()
 

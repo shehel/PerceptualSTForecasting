@@ -2,8 +2,10 @@ import torch
 from torch import nn
 from openstl.modules import (ConvSC, ConvSC3D, ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                            HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
-                           SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock)
+                           SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock, UNetConvBlock,
+                           UNetUpBlock)
 
+import pdb
 
 class SimVP_Model(nn.Module):
     r"""SimVP Model
@@ -102,13 +104,15 @@ class SimVP_Model(nn.Module):
 
         z = embed.view(B, T, C_, H_, W_)
         z = self.hid(z)
+        z = embed.view(B, T, C_, H_, W_)
+        z = self.hid(z)
 
+        return z
         return z
 def sampling_generator(N, reverse=False):
     samplings = [False, True] * (N // 2)
     if reverse: return list(reversed(samplings[:N]))
     else: return samplings[:N]
-
 
 class Encoder(nn.Module):
     """3D Encoder for SimVP"""
@@ -215,6 +219,8 @@ class MetaBlock(nn.Module):
                 drop=drop, drop_path=drop_path, act_layer=nn.GELU)
         elif model_type == 'convmixer':
             self.block = ConvMixerSubBlock(in_channels, kernel_size=11, activation=nn.GELU)
+        elif model_type == 'convsc':
+            self.block = ConvSC(in_channels, in_channels, kernel_size=3)   
         elif model_type == 'convnext':
             self.block = ConvNeXtSubBlock(
                 in_channels, mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
@@ -289,7 +295,6 @@ class MidMetaNet(nn.Module):
     def forward(self, x):
         B, T, C, H, W = x.shape
         x = x.reshape(B, T*C, H, W)
-
         z = x
         for i in range(self.N2):
             z = self.enc[i](z)

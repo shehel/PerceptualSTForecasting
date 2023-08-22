@@ -34,6 +34,12 @@ def load_h5_file(file_path, sl = None, to_torch = False) -> np.ndarray:
         return data
 
 MAX_TEST_SLOT_INDEX = 240
+perm = [[0,1,2,3,4,5,6,7],
+        [2,3,4,5,6,7,0,1],
+        [4,5,6,7,0,1,2,3],
+        [6,7,0,1,2,3,4,5]
+        ]
+
 
 def create_binary_mask(frame, epsilon=1e-5):
     """
@@ -92,15 +98,21 @@ class T4CDataset(Dataset):
                  test:bool = False,
                  pre_seq_length: int = 12,
                  aft_seq_length: int = 1,
+                 perm_bool = False,
                  ):
         self.root_dir = root_dir
         self.file_filter = file_filter
         self.pre_seq_length = pre_seq_length
         self.aft_seq_length = aft_seq_length
+        self.perm = perm_bool
         self.mean = 0
         self.std = 1
         self.test = test
-
+        self.m = [0.1197112,  1.73881751, 0.11084138, 1.7988615,  0.1094989,  1.81207202, 0.10324037, 1.71015936]
+        self.s = [1.6551339 , 5.82894155, 1.54915965, 6.13199342, 1.51485388, 6.19980411, 1.47532519, 5.83794635]
+        # make self.mean and self.std so that it has the shape [None,None,:,None,None
+        self.m = np.array(self.m)[None,:,None,None]
+        self.s = np.array(self.s)[None,:,None,None] 
         if self.file_filter is None:
             self.file_filter = "**/training/*8ch.h5"
 
@@ -248,7 +260,7 @@ def load_data(batch_size, val_batch_size, data_root,
                                                    num_workers=num_workers,
                                                    collate_fn = train_collate_fn)
     dataloader_vali = torch.utils.data.DataLoader(val_set,
-                                                  batch_size=val_batch_size, shuffle=False,
+                                                  batch_size=val_batch_size, shuffle=True,
                                                   pin_memory=True, drop_last=True,
                                                   num_workers=num_workers,
                                                   collate_fn = train_collate_fn
