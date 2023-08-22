@@ -34,60 +34,6 @@ def load_h5_file(file_path, sl = None, to_torch = False) -> np.ndarray:
         return data
 
 MAX_TEST_SLOT_INDEX = 240
-perm = [[0,1,2,3,4,5,6,7],
-        [2,3,4,5,6,7,0,1],
-        [4,5,6,7,0,1,2,3],
-        [6,7,0,1,2,3,4,5]
-        ]
-
-
-def create_binary_mask(frame, epsilon=1e-5):
-    """
-    Create a binary mask by sampling pixels from the input frame with probability proportional to their intensity values.
-
-    Parameters:
-        frame (numpy.ndarray): Input 128x128 frame containing values in the range 0-255.
-        epsilon (float): A small value to add to the normalized intensity values to make the function numerically stable.
-                         Default is 1e-5.
-
-    Returns:
-        numpy.ndarray: Binary mask of the same shape as the input frame with randomly activated pixels.
-    """
-    # Normalize the frame to have values in the range [0, 1]
-    normalized_frame = frame / 255.0
-    mask = np.random.binomial(1, normalized_frame, size=normalized_frame.shape)
-
-    # Add epsilon to the normalized intensity values to ensure numerical stability
-
-    # Create a binary mask using Bernoulli sampling with probabilities equal to the normalized intensity values
-
-    return mask.astype(int)
-
-def find_largest(matrix, topk):
-    # Flatten the matrix to a 1D array
-    flat_matrix = matrix.flatten()
-
-    # Sort the array in descending order
-    sorted_indices = np.argsort(flat_matrix)[::-1]
-
-    # Set the largest 1000 values to 1 and the rest to 0
-    modified_array = np.zeros_like(flat_matrix)
-    modified_array[sorted_indices[:topk]] = 1
-
-    # Reshape the modified array back to the original matrix shape
-    modified_matrix = modified_array.reshape(matrix.shape)
-
-    return modified_matrix
-
-def activate_code(probability):
-    """
-    Activate a piece of code with a defined probability using Bernoulli sampling from scipy.
-
-    :param probability: The probability of activation (between 0 and 1).
-    :return: True if the code should be activated, False otherwise.
-    """
-    rv = bernoulli(probability)
-    return rv.rvs() == 1
 
 def create_binary_mask(frame, epsilon=1e-5):
     """

@@ -143,9 +143,10 @@ class Base_method(object):
             #                          pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]].cpu().numpy(),
             #                          batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]].cpu().numpy()])))
             results.append(dict(zip(['inputs', 'preds', 'trues'],
-                                    [batch_x[:,:,4:5,:,:].cpu().numpy(),
-                                     pred_y[:,:,2:3,:,:].cpu().numpy()*batch_static.numpy(),
-                                     batch_y[:,:,4:5,:,:].cpu().numpy()*batch_static.numpy()])))
+                                    #  [batch_x[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
+                                    #  pred_y[:,0:1,2:3,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
+                                    #  batch_y[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy()])))
+
                                     #  [batch_x[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
                                     #  pred_y[:,0:1,2:3,[52,30,49,90],[76,58,76,40]].cpu().numpy(),
                                     #  batch_y[:,0:1,4:5,[52,30,49,90],[76,58,76,40]].cpu().numpy()])))
