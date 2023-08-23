@@ -74,7 +74,7 @@ class BaseExperiment(object):
         self._rank = 0
         self._world_size = 1
         self._dist = self.args.dist
-        self.early_stop = self.args.early_stop_epoch
+        self._early_stop = self.args.early_stop_epoch
         
         self.losses = ['val_train_loss', 'val_total_loss', 'val_main_loss', 'val_reg_loss', "val_div_loss", 'val_std_div', 'val_sum']
 
@@ -375,12 +375,12 @@ class BaseExperiment(object):
                         series='Train total loss', value=loss_total.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report',
                         series='Train sum loss', value=loss_sum.avg, iteration=epoch) 
-                    early_stop =recorder(vali_loss, self.method.model, self.path)
+                    early_stop =recorder(vali_loss, self.method.model, self.path, epoch)
                     self._save(name='latest')
             if self._use_gpu and self.args.empty_cache:
                 torch.cuda.empty_cache()
-            if epoch > self._early_stop and early_stop:  # early stop training
-                print_log('Early stop training at f{} epoch'.format(epoch))
+            # if epoch > self._early_stop and early_stop:  # early stop training
+            #     print_log('Early stop training at f{} epoch'.format(epoch))
 
         if not check_dir(self.path):  # exit training when work_dir is removed
             assert False and "Exit training because work_dir is removed"
@@ -392,19 +392,19 @@ class BaseExperiment(object):
         time.sleep(1)  # wait for some hooks like loggers to finish
         self.call_hook('after_run')
 
-    def vali(self, logger):
+    def vali(self, logger, epoch):
         """A validation loop during training"""
         self.call_hook('before_val_epoch')
-        results, eval_log = self.method.vali_one_epoch(self, self.vali_loader)
-        for loss, name in zip(val_loss, self.losses):
+        results = self.method.vali_one_epoch(self, self.vali_loader)
+        for loss, name in zip(results['loss'], self.losses):
             logger.report_scalar(title='Training Report',
                         series=name, value=loss.cpu().numpy(), iteration=epoch)
 
-        plot_tmaps(trues[200,:,0,:,:,np.newaxis], preds[200,:,0,:,:,np.newaxis], epoch, logger)
+        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis], epoch, logger)
 
         for i in [[52,76],[73,54],[76,101],[100,105]]:
-            plt.plot(trues[200,:,0,i[0],i[1]], label="True")
-            plt.plot(preds[200,:,0,i[0],i[1]], label="Preds")
+            plt.plot(results['trues'][200,:,0,i[0],i[1]], label="True")
+            plt.plot(results['preds'][200,:,0,i[0],i[1]], label="Preds")
             plt.legend()
             fig = plt.gcf()  # Get the current figure
 
@@ -420,11 +420,18 @@ class BaseExperiment(object):
         self.call_hook('after_val_epoch')
 
         if self._rank == 0:
+            if 'weather' in self.args.dataname:
+                metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
+            else:
+                metric_list, spatial_norm = ['mse', 'mae'], False
+            eval_res, eval_log = metric(results["preds"], results["trues"], self.vali_loader.dataset.mean, self.vali_loader.dataset.std,
+                                        metrics=metric_list, spatial_norm=spatial_norm)
+
             print_log('val\t '+eval_log)
             if has_nni:
-                nni.report_intermediate_result(results['mse'].mean())
+                nni.report_intermediate_result(eval_res['mse'].mean())
 
-        return results['loss'].mean()
+        return results['loss'][0]
 
     def test(self):
         """A testing loop of STL methods"""
@@ -441,18 +448,10 @@ class BaseExperiment(object):
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
         
-        inp_sum = inputs[:,:,0::2].sum(axis=1, keepdims=True)
-        mask = (inp_sum > 0).astype(np.float32)
-        
         
         #trues = trues[:,:,0::2]
         #preds = preds[:,:,0::2]
         #trues = trues[:,:,2:3]#, 62-10,92-40]
-        trues = trues[:,:,:]# 62-10,92-40]
-        # multiply mask by preds
-        preds = preds #* mask
-        #preds=  preds[:,:,2:3]#, 62-10,92-40]
-        preds=  preds[:,:,:]#, 62-10,92-40]
 
         if 'weather' in self.args.dataname:
             metric_list, spatial_norm = self.args.metrics, True
@@ -466,7 +465,7 @@ class BaseExperiment(object):
 
         if self._rank == 0:
             print_log(eval_log)
-            folder_path = osp.join(self.path, 'saved_comb_training')
+            folder_path = osp.join(self.path, 'saved_comb')
             check_dir(folder_path)
 
             if self.args.ex_name.endswith('unet'):

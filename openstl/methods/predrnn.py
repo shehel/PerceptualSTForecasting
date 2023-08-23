@@ -57,7 +57,7 @@ class PredRNN(Base_method):
         img_gen = reshape_patch_back(img_gen, self.args.patch_size)
         pred_y = img_gen[:, -self.args.aft_seq_length:].permute(0, 1, 4, 2, 3).contiguous()
 
-        return pred_y
+        return pred_y, None
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""

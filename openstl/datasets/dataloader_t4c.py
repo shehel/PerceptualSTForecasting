@@ -193,10 +193,10 @@ class T4CDataset(Dataset):
         # dynamic_input[:,:,:,77:] = 0
 
         # zero out static channels
-        static_ch[:,:,0:52,:] = 0
-        static_ch[:,:,53:,:] = 0
-        static_ch[:,:,:,0:76] = 0
-        static_ch[:,:,:,77:] = 0
+        # static_ch[:,:,0:52,:] = 0
+        # static_ch[:,:,53:,:] = 0
+        # static_ch[:,:,:,0:76] = 0
+        # static_ch[:,:,:,77:] = 0
 
 
         return dynamic_input, output_data, static_ch

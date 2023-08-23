@@ -27,7 +27,7 @@ method_maps = {
     'predrnnpp': PredRNNpp,
     'predrnnv2': PredRNNv2,
     'simvp': SimVP,
-    'unet': UNet
+    'unet': UNet,
     'tau': TAU,
     'dmvfn': DMVFN
 }

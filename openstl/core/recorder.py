@@ -12,7 +12,7 @@ class Recorder:
         self.early_stop_time = early_stop_time
         self.warmup = warmup
 
-    def __call__(self, val_loss, model, path, early_stop=False):
+    def __call__(self, val_loss, model, path, epoch, early_stop=False):
         if epoch > self.warmup:
             score = -val_loss
             if self.best_score is None:
