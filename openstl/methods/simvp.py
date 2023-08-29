@@ -132,7 +132,7 @@ class SimVP(Base_method):
 
                 # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
                 #     try:
-                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1),torch.tensor(self.component_2),torch.tensor(self.component_3),torch.tensor(self.component_4),torch.tensor(self.component_5),verbose=False)
+                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1),torch.tensor(self.component_2),torch.tensor(self.component_3),torch.tensor(self.component_4),torch.tensor(self.component_5),verbose=True)
                 #     except:
                 #         print ("FAILURE in softadapt")
                 #         pdb.set_trace()

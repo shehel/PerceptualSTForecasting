@@ -19,12 +19,122 @@ from torch.nn import functional as F
 from torch import nn
 import torch.multiprocessing as mp
 from torch import distributed as dist
-
+from math import exp
 import openstl
 from .config_utils import Config
 
 import pdb
 
+def normalize_image(image, range_min, range_max):
+    # Normalize the image pixel values to the range [0, 1]
+    return (image - range_min) / (range_max - range_min)
+
+def gaussian(window_size, sigma):
+    gauss = torch.tensor([exp(-(x - window_size // 2) ** 2 / float(2 * sigma ** 2)) for x in range(window_size)])
+    return gauss / gauss.sum()
+
+
+# def create_window_3D(window_size, channel):
+#     _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
+#     _2D_window = _1D_window.mm(_1D_window.t())
+#     _3D_window = _1D_window.mm(_2D_window.reshape(1, -1)).reshape(window_size, window_size, window_size).float().unsqueeze(0).unsqueeze(0)
+#     window = _3D_window.expand(channel, 1, window_size, window_size, window_size).contiguous()
+#     return window
+
+def create_window_3D(window_size, channel):
+    # Create a 3D window filled with ones
+    _3D_window = torch.ones((window_size, 1, 1)).float().unsqueeze(0).unsqueeze(0)
+    window = _3D_window.expand(channel, 1, window_size, 1, 1).contiguous()
+    return window/window.sum()
+
+def _ssim_3D(img1, img2, window, window_size, channel, size_average=False):
+    #padding = window_size // 2
+    #mu1 = F.conv3d(img1, window, padding=padding, groups=channel)
+    #mu2 = F.conv3d(img2, window, padding=padding, groups=channel)
+
+    padding = (window_size - 1) # Fixing the padding calculation here
+
+    mu1 = F.conv3d(img1, window, padding='same', groups=channel) # Applying padding only to the temporal dimension
+    mu2 = F.conv3d(img2, window, padding='same', groups=channel)
+    mu1_sq = mu1.pow(2)
+    mu2_sq = mu2.pow(2)
+
+    mu1_mu2 = mu1 * mu2
+
+    sigma1_sq = F.conv3d(img1*img1, window, padding ='same', groups = channel) - mu1_sq
+    sigma2_sq = F.conv3d(img2*img2, window, padding ='same', groups = channel) - mu2_sq
+    sigma12 = F.conv3d(img1*img2, window, padding ='same', groups = channel) - mu1_mu2
+
+    C1 = 0.01 ** 2
+    C2 = 0.03 ** 2
+    eps = 1e-8
+    luminance = (2 * mu1_mu2 + C1) / (mu1_sq + mu2_sq + C1 + eps)
+
+
+# Ensure variances are non-negative
+    sigma1_sq = torch.clamp(sigma1_sq, min=eps)
+    sigma2_sq = torch.clamp(sigma2_sq, min=eps)
+
+# Contrast component with added stability
+    contrast = (2 * torch.sqrt(sigma1_sq) * torch.sqrt(sigma2_sq) + C2) / (sigma1_sq + sigma2_sq + C2 + eps)
+
+# Structure component with added stability
+    structure_denominator = torch.sqrt(sigma1_sq) * torch.sqrt(sigma2_sq) + C2 / 2 + eps
+    structure = (sigma12 + C2 / 2) / structure_denominator
+
+# Overall SSIM
+    ssim_map = structure #* contrast
+
+    if size_average:
+        calc = ssim_map.mean()
+        # if torch.isnan(calc) or torch.isinf(calc):
+        #     pdb.set_trace()
+
+    else:
+        calc = ssim_map.mean(1).mean(1).mean(1)
+        # if torch.isnan(calc) or torch.isinf(calc):
+        #     pdb.set_trace()
+
+    return calc
+
+
+class SSIM3D(torch.nn.Module):
+    def __init__(self, window_size=11, size_average=True):
+        super(SSIM3D, self).__init__()
+        self.window_size = window_size
+        self.size_average = size_average
+        self.channel = 1
+        self.window = create_window_3D(window_size, self.channel)
+
+    def forward(self, img1, img2):
+        # switch 1 and 2 dimensions for img1 and img2 so that data becomes batchsize, channels, timesteps, height, width
+        img1 = img1.permute(0, 2, 1, 3, 4)
+        img2 = img2.permute(0, 2, 1, 3, 4)
+        (_, channel, _, _, _) = img1.size()
+
+        if torch.isnan(img1.sum()):
+            pdb.set_trace()
+        if channel == self.channel and self.window.device == img1.device and self.window.dtype == img1.dtype:
+            window = self.window
+        else:
+            window = create_window_3D(self.window_size, channel)
+
+            if img1.is_cuda:
+                window = window.to(img1.device)
+            window = window.type_as(img1)
+
+            self.window = window
+            self.channel = channel
+
+        # clip img1 and img2 to be between 0 and 255
+        img1 = torch.clamp(img1, 0, 1)
+        img2 = torch.clamp(img2, 0, 1)
+        #img1 = normalize_image(img1, 0, 255)
+        #img2 = normalize_image(img2, 0, 255)
+
+        calc = _ssim_3D(img1, img2, window, self.window_size, channel, self.size_average)
+        # check if calc is torch nan or inf and call pdb
+        return calc
 def row_standardization(matrix):
     # Calculate mean and standard deviation along axis 1 (rows)
     mean = torch.mean(matrix, dim=1, keepdim=True)
@@ -58,9 +168,11 @@ class DifferentialDivergenceLoss(nn.Module):
         self.w1, self.w2, self.w3, self.w4, self.w5 = w1, w2, w3, w4, w5
         #self.main_loss = nn.L1Loss()
         self.main_loss = nn.MSELoss()
+        self.ssim = SSIM3D(window_size=4)
 
     def forward(self, pred, true):
         # mae loss using functional
+        #std_loss = self.ssim(pred, true)
         mse_loss = self.main_loss(pred, true)
         # sum_1 = torch.sum(pred, dim=(3,4))[:,:,0]
         # sum_2 = torch.sum(true, dim=(3,4))[:,:,0]

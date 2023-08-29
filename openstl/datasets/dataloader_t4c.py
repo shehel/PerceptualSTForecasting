@@ -153,6 +153,7 @@ class T4CDataset(Dataset):
         
         #two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
         two_hours = self.file_data[file_idx][start_hour:start_hour + self.pre_seq_length * 2 + 1]
+        #two_hours = two_hours
         #two_hours = (two_hours - np.min(two_hours)) * (200 / (np.max(two_hours) - np.min(two_hours)))
         #
         #two_hours = (two_hours - two_hours.min()) / (two_hours.max() - two_hours.min())
@@ -162,8 +163,8 @@ class T4CDataset(Dataset):
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
         if self.test:
-            random_int_x = 255
-            random_int_y = 124
+            random_int_x = 312
+            random_int_y = 68
         else:
             random_int_x = random.randint(0, 300)
             random_int_y = random.randint(0, 300)
@@ -178,9 +179,9 @@ class T4CDataset(Dataset):
         static_ch = np.mean(dynamic_input[:,4,:,:], axis=0)
         output_data = output_data[:,0::1,:,:]
         if self.test:
-            static_ch = np.where(static_ch > 0.5, 1,0)
+            static_ch = np.where(static_ch > 0, 1,0)
         else:
-            static_ch = np.where(static_ch > 0.5, 1,0)
+            static_ch = np.where(static_ch > 0, 1,0)
 
 
         static_ch = static_ch[np.newaxis, np.newaxis, :, :]
@@ -192,11 +193,12 @@ class T4CDataset(Dataset):
         # dynamic_input[:,:,:,0:76] = 0
         # dynamic_input[:,:,:,77:] = 0
 
+        #static_ch[:,:,64,64] = 1
         # zero out static channels
-        # static_ch[:,:,0:52,:] = 0
-        # static_ch[:,:,53:,:] = 0
-        # static_ch[:,:,:,0:76] = 0
-        # static_ch[:,:,:,77:] = 0
+        # static_ch[:,:,0:64,:] = 0
+        # static_ch[:,:,65:,:] = 0
+        # static_ch[:,:,:,0:64] = 0
+        # static_ch[:,:,:,65:] = 0
 
 
         return dynamic_input, output_data, static_ch

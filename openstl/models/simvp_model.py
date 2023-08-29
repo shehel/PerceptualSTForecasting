@@ -6,7 +6,7 @@ from openstl.modules import (ConvSC, ConvSC3D, ConvNeXtSubBlock, ConvMixerSubBlo
                            UNetUpBlock)
 
 import pdb
-
+from einops import rearrange, reduce
 class SimVP_Model(nn.Module):
     r"""SimVP Model
 
@@ -30,6 +30,12 @@ class SimVP_Model(nn.Module):
         # self.enc_sc = Encoder(16*C, hid_S, 2, spatio_kernel_enc)
         # self.dec_sc = Decoder(hid_S,16*C,2, spatio_kernel_dec)
         # self.dec_s = Decoder(16, 1, 2, spatio_kernel_dec)
+        # self.enc_s = Encoder(1, 16, 2, spatio_kernel_enc)
+        # self.enc_s1 = Encoder(1, 16, 2, spatio_kernel_enc)
+        # self.enc_sc = Encoder(16*C, hid_S, 2, spatio_kernel_enc)
+        # self.dec_sc = Decoder(hid_S,16*C,2, spatio_kernel_dec)
+        # self.dec_s = Decoder(16, 1, 2, spatio_kernel_dec)
+        # self.dec_s1 = Decoder(16, 1, 2, spatio_kernel_dec)
         model_type = 'gsta' if model_type is None else model_type.lower()
         if model_type == 'incepu':
             self.hid = MidIncepNet(T*hid_S, hid_T, N_T)
@@ -73,6 +79,47 @@ class SimVP_Model(nn.Module):
         # Y = Y[:,:,0::2]
         return (Y,encoded)
 
+    # def forward(self, x_raw):
+    #     try:
+    #         B, T, C, H, W = x_raw.shape # (1,12,8,128,128)
+    #         x1 = x_raw[:, :, 0::2]
+    #         x2 = x_raw[:, :, 1::2]
+    #         x1 = rearrange(x1, 'b t c h w -> (b t c) 1 h w')
+    #         x2 = rearrange(x2, 'b t c h w -> (b t c) 1 h w')
+            
+    #         x1, skip1 = self.enc_s(x1) # (48,16,64,64)
+    #         x2, skip2 = self.enc_s1(x2) # (48,16,64,64)
+    #         x = torch.cat((x1, x2), dim=0) # (96,16,64,64)
+    #         half_B = x.shape[0] // 2
+
+    #         x = rearrange(x, '(b t c) c1 h w -> (b t) (c c1) h w', b=B, t=T, c=C, c1=16)
+
+    #         embed, skip3 = self.enc_sc(x) # (12,32,32,32)
+    #         _, C_, H_, W_ = embed.shape
+
+    #         z = rearrange(embed, '(b t) c h w -> b t c h w', b=B, t=T)
+    #         encoded = self.hid(z)
+    #         hid = rearrange(encoded, 'b t c h w -> (b t) c h w', c=C_, h=H_, w=W_)
+
+    #         Y = self.dec_sc(hid, skip3) # (12,128,64,64)
+    #         Y = rearrange(Y, '(b t) (c c1) h w -> (b t c) c1 h w', b=B, t=T, c1=16, c=C)
+            
+    #         # undo the cat operation
+    #         Y1 = Y[:half_B]
+    #         Y2 = Y[half_B:]
+
+    #         Y1 = self.dec_s(Y1, skip1)
+    #         Y2 = self.dec_s1(Y2, skip2)
+
+    #         Y_out = torch.zeros(B, T, C, H, W, dtype=Y1.dtype, device=Y1.device)  # (12,8,128,128)
+
+    #         Y_out[:,:,0::2,:,:] = rearrange(Y1, '(b t c) 1 h w -> b t c h w', b=B, t=T, c=4)
+    #         Y_out[:,:,1::2,:,:] = rearrange(Y2, '(b t c) 1 h w -> b t c h w', b=B, t=T, c=4)
+
+    #         return (Y_out, encoded)
+    #     except:
+    #         pdb.set_trace()
+   
     def recon(self, x_raw):
         B, T, C, H, W = x_raw.shape
         # x = x_raw.reshape(B*T*C, 1, H, W)

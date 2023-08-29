@@ -42,6 +42,7 @@ dataset_parameters = {
         'pre_seq_length': 12,
         'aft_seq_length': 12,
         'total_length': 24,
+        'metrics': ['mse', 'mae'],
     },
 
     'human': {

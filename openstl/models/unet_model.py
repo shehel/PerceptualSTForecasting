@@ -37,8 +37,8 @@ class UNet_Model(nn.Module):
             self.down_path.append(UNetConvBlock(prev_channels, 2 ** (wf + i), padding, batch_norm, time_emb_dim=6 if pos_emb else None))
             prev_channels = 2 ** (wf + i)
 
-        #self.hid = MidMetaNet(256, 256, 3,
-        #         input_resolution=(32, 32), model_type="convsc")
+        self.hid = MidMetaNet(256, 256, 4,
+                 input_resolution=(32, 32), model_type="convsc")
 
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):

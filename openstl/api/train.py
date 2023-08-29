@@ -402,9 +402,9 @@ class BaseExperiment(object):
 
         plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis], epoch, logger)
 
-        for i in [[52,76],[73,54],[76,101],[100,105]]:
-            plt.plot(results['trues'][200,:,0,i[0],i[1]], label="True")
-            plt.plot(results['preds'][200,:,0,i[0],i[1]], label="Preds")
+        for i in [10,50,100,150]:
+            plt.plot(results['trues'][i,:,0,64,64], label="True")
+            plt.plot(results['preds'][i,:,0,64,64], label="Preds")
             plt.legend()
             fig = plt.gcf()  # Get the current figure
 
@@ -436,10 +436,10 @@ class BaseExperiment(object):
     def test(self):
         """A testing loop of STL methods"""
         if self.args.test:
-            best_model_path = osp.join(self.path, 'checkpoint.pth')
-            #best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
-            self._load_from_state_dict(torch.load(best_model_path))
-            #self._load(best_model_path)
+            #best_model_path = osp.join(self.path, 'checkpoint.pth')
+            best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
+            #self._load_from_state_dict(torch.load(best_model_path))
+            self._load(best_model_path)
 
 
         self.call_hook('before_val_epoch')
@@ -465,7 +465,7 @@ class BaseExperiment(object):
 
         if self._rank == 0:
             print_log(eval_log)
-            folder_path = osp.join(self.path, 'saved_comb')
+            folder_path = osp.join(self.path, 'saved_comb1')
             check_dir(folder_path)
 
             if self.args.ex_name.endswith('unet'):

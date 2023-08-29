@@ -94,19 +94,19 @@ class UNet(Base_method):
 
             with self.amp_autocast():
                 pred_y, translated = self._predict(batch_x)
-                encoded = self.model.encode(batch_y)
-                recon = self.model.recon(batch_x)
+                #encoded = self.model.encode(batch_y)
+                #recon = self.model.recon(batch_x)
                 #mse_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]], batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
                 #loss, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
-                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
+                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
                 #loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]],
                 #                         j                                batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
-                encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
-                recon_loss = F.mse_loss(recon, batch_x[:,:,0::2])
-                latent_loss = F.mse_loss(encoded, translated)
+                #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
+                #recon_loss = F.mse_loss(recon, batch_x[:,:,0::2])
+                #latent_loss = F.mse_loss(encoded, translated)
 
-                loss = latent_loss + recon_loss + encoded_norms
+                #loss = latent_loss + recon_loss + encoded_norms
                 # take loss of pred_y[:,:,1:3,:,:] and batch_y[:,:,4:5,:,:] but multiply both by batch_static[np.newaxis, np.newaxis, :, :, :]
                 #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
                 #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
@@ -167,9 +167,9 @@ class UNet(Base_method):
             if not self.dist:
                 losses_m.update(loss.item(), batch_x.size(0))
                 losses_mse_m.update(mse_loss.item(), batch_x.size(0))
-                losses_reg_m.update(latent_loss.item(), batch_x.size(0))
-                losses_div_m.update(recon_loss.item(), batch_x.size(0))
-                losses_div_s.update(encoded_norms.item(), batch_x.size(0))
+                losses_reg_m.update(reg_loss.item(), batch_x.size(0))
+                losses_div_m.update(mse_div.item(), batch_x.size(0))
+                losses_div_s.update(std_div.item(), batch_x.size(0))
                 losses_total.update(total_loss.item(), batch_x.size(0))
                 losses_sum.update(sum_loss.item(), batch_x.size(0))
 

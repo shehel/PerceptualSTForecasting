@@ -9,6 +9,7 @@ from openstl.models import SimVP_Model
 from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
 from .simvp import SimVP
 import pdb
+from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
 
 
 
@@ -26,8 +27,14 @@ class TAU(SimVP):
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
         self.criterion1 = nn.MSELoss()
         self.criterion = DifferentialDivergenceLoss()
-        self.adapt_weights = torch.tensor([1,0,1,1,1])
-
+        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.component_1 = []
+        self.component_2 = []
+        self.component_3 = []
+        self.component_4 = []
+        self.component_5 = []
+        self.iters_to_make_updates = 50
+        self.iter = 0
     def _build_model(self, args):
         return SimVP_Model(**args).to(self.device)
     
@@ -68,9 +75,39 @@ class TAU(SimVP):
 
             with self.amp_autocast():
                 pred_y, _ = self._predict(batch_x)
-                loss = self.criterion1(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static) + self.args.alpha * self.diff_div_reg(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
+
                 _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
-                loss = self.adapt_weights[0] * loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
+                #mse_div = std_div*0
+                mse_loss = self.criterion1(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static) + self.args.alpha * self.diff_div_reg(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
+                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
+
+                # self.component_1.append(mse_loss.item())
+                # self.component_2.append(mse_div.item())
+                # self.component_3.append(std_div.item())
+                # self.component_4.append(reg_loss.item())
+                # self.component_5.append(sum_loss.item())
+
+
+                # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
+                #     try:
+                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1),torch.tensor(self.component_2),torch.tensor(self.component_3),torch.tensor(self.component_4),torch.tensor(self.component_5),verbose=False)
+                #     except:
+                #         print ("FAILURE in softadapt")
+                #         pdb.set_trace()
+                #     self.component_1 = []
+                #     self.component_2 = []
+                #     self.component_3 = []
+                #     self.component_4 = []
+                #     self.component_5 = []
+                #     self.component_1.append(mse_loss.item())
+                #     self.component_2.append(mse_div.item())
+                #     self.component_3.append(std_div.item())
+                #     self.component_4.append(reg_loss.item())
+                #     self.component_5.append(sum_loss.item())
+
+                # self.iter += 1
+
+
             if not self.dist:
                 losses_m.update(loss.item(), batch_x.size(0))
                 losses_mse_m.update(mse_loss.item(), batch_x.size(0))

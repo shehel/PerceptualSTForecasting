@@ -42,7 +42,7 @@ if __name__ == '__main__':
             if config[attribute] is None:
                 config[attribute] = default_values[attribute]
 
-    task = Task.init(project_name='simvp/e1/q3', task_name=config['ex_name'])
+    task = Task.init(project_name='simvp/e1/q6', task_name=config['ex_name'])
     task.connect_configuration(config)
     # set multi-process settings
 
