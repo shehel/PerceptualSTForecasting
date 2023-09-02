@@ -42,7 +42,7 @@ def get_ani(mat):
     fig, ax = plt.subplots(figsize=(8, 8))
     imgs = []
     for img in mat:
-        img = ax.imshow(img, animated=True, vmax=30,vmin=0)
+        img = ax.imshow(img, animated=True)
         imgs.append([img])
     ani = animation.ArtistAnimation(fig, imgs, interval=1000, blit=True, repeat_delay=3000)
     plt.close()
@@ -295,6 +295,13 @@ class BaseExperiment(object):
         T, C, H, W = self.args.in_shape
         if self.args.method in ['simvp', 'unet', 'tau']:
             input_dummy = torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device)
+        elif self.args.method == 'simvprnn':
+            Hp, Wp = 32, 32
+            Cp = 32
+            _tmp_input = torch.ones(1, self.args.total_length, C, H, W).to(self.device)
+            _tmp_flag = torch.ones(1, self.args.aft_seq_length - 1, Cp, Hp, Wp).to(self.device)
+            input_dummy = (_tmp_input, _tmp_flag)
+
         elif self.args.method == 'crevnet':
             # crevnet must use the batchsize rather than 1
             input_dummy = torch.ones(self.args.batch_size, 20, C, H, W).to(self.device)
@@ -436,10 +443,10 @@ class BaseExperiment(object):
     def test(self):
         """A testing loop of STL methods"""
         if self.args.test:
-            #best_model_path = osp.join(self.path, 'checkpoint.pth')
-            best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
-            #self._load_from_state_dict(torch.load(best_model_path))
-            self._load(best_model_path)
+            best_model_path = osp.join(self.path, 'checkpoint.pth')
+            #best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
+            self._load_from_state_dict(torch.load(best_model_path))
+            #self._load(best_model_path)
 
 
         self.call_hook('before_val_epoch')
@@ -465,7 +472,7 @@ class BaseExperiment(object):
 
         if self._rank == 0:
             print_log(eval_log)
-            folder_path = osp.join(self.path, 'saved_comb1')
+            folder_path = osp.join(self.path, 'saved_comb')
             check_dir(folder_path)
 
             if self.args.ex_name.endswith('unet'):

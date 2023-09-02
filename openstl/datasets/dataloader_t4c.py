@@ -131,8 +131,8 @@ class T4CDataset(Dataset):
         static_list = list(Path(self.root_dir).rglob(self.static_filter))
 
 
-        for city in static_list:
-            self.static_dict[city.parts[-2]] = load_h5_file(city)
+        # for city in static_list:
+        #     self.static_dict[city.parts[-2]] = load_h5_file(city)
         for i, file in enumerate(self.file_list):
             self.file_data.append(load_h5_file(file))
 
@@ -172,11 +172,17 @@ class T4CDataset(Dataset):
                     random_int_y:random_int_y+128, ]
 
         #two_hours = (two_hours - self.m) / self.s
+        #two_hours = two_hours/255
     
         dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
         #static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
         #static_ch = static_ch/255
-        static_ch = np.mean(dynamic_input[:,4,:,:], axis=0)
+        # get mean of of dynamic input across first axis
+        inp_mean = np.mean(dynamic_input, axis=0)
+
+        # remove mean from output data
+        output_data = output_data - inp_mean
+        static_ch = inp_mean[4,:,:]
         output_data = output_data[:,0::1,:,:]
         if self.test:
             static_ch = np.where(static_ch > 0, 1,0)
@@ -188,12 +194,12 @@ class T4CDataset(Dataset):
         
 
         # zero out all but [:,:,52,76] in output_data
-        # dynamic_input[:,:,0:52,:] = 0
-        # dynamic_input[:,:,53:,:] = 0
-        # dynamic_input[:,:,:,0:76] = 0
-        # dynamic_input[:,:,:,77:] = 0
+        # dynamic_input[:,:,0:64,:] = 0
+        # dynamic_input[:,:,65:,:] = 0
+        # dynamic_input[:,:,:,0:64] = 0
+        # dynamic_input[:,:,:,65:] = 0
 
-        #static_ch[:,:,64,64] = 1
+        # static_ch[:,:,64,64] = 1
         # zero out static channels
         # static_ch[:,:,0:64,:] = 0
         # static_ch[:,:,65:,:] = 0
