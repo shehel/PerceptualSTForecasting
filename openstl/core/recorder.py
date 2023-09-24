@@ -3,7 +3,7 @@ import torch
 
 
 class Recorder:
-    def __init__(self, verbose=False, delta=0, early_stop_time=10, warmup=20):
+    def __init__(self, verbose=False, delta=0, early_stop_time=10, warmup=0):
         self.verbose = verbose
         self.best_score = None
         self.val_loss_min = np.Inf

@@ -5,6 +5,7 @@ from torch import nn
 from openstl.modules import (ConvSC, ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                            HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
                            SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock)
+from timm.models.layers import DropPath, trunc_normal_
 
 import pdb
 class UNet_Model(nn.Module):
@@ -177,6 +178,7 @@ class Block(nn.Module):
         self.proj = nn.Conv2d(dim, dim_out, kernel_size=3, padding=1)
         self.act = nn.ReLU()#scaled_hat_activation()
         self.norm = nn.BatchNorm2d(dim_out)
+        #self.apply(self._init_weights)
 #
 
 
@@ -187,6 +189,12 @@ class Block(nn.Module):
             scale, shift = scale_shift
             x = x * (scale + 1) + shift
         return self.act(x)
+
+    def _init_weights(self, m):
+        if isinstance(m, (nn.Conv2d)):
+            trunc_normal_(m.weight, std=.02)
+            nn.init.constant_(m.bias, 0)
+
 
 class UNetConvBlock(nn.Module):
     def __init__(self, in_size, out_size, padding, batch_norm, 

@@ -1,0 +1,31 @@
+method = 'SimVPRnn'
+spatio_kernel_enc = 3
+spatio_kernel_dec = 3
+hid_S = 32
+hid_T = 256
+N_T = 4
+N_S = 4
+lr = 1e-3
+batch_size = 16
+drop_path = 0.1
+root_dir = "7days"
+data_root = "7days"
+workers = 4
+epochs = 200
+sched = 'onecycle'
+# reverse scheduled sampling
+reverse_scheduled_sampling = 0
+r_sampling_step_1 = 25000
+r_sampling_step_2 = 50000
+r_exp_alpha = 5000
+# scheduled sampling
+scheduled_sampling = 1
+sampling_stop_iter = 50000
+sampling_start_value = 1.0
+sampling_changing_rate = 0.00002
+# model
+num_hidden = '128,128,128,128'
+filter_size = 5
+stride = 1
+layer_norm = 0
+patch_size = 1

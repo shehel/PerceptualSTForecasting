@@ -9,10 +9,9 @@ from timm.utils import AverageMeter
 from openstl.models import UNet_Model
 from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
 from .base_method import Base_method
-
-from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
 import pdb
 
+from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
 class UNet(Base_method):
     r"""SimVP
 
@@ -28,9 +27,9 @@ class UNet(Base_method):
         #self.criterion = nn.MSELoss()
         self.loss_wgt = torch.tensor(1)
         self.criterion = DifferentialDivergenceLoss()
-        self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
-        self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.adapt_object = LossWeightedSoftAdapt(beta=1.5)
+        self.iters_to_make_updates = 100
+        self.adapt_weights = torch.tensor([1,0,0,0,1])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -98,15 +97,16 @@ class UNet(Base_method):
                 #recon = self.model.recon(batch_x)
                 #mse_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]], batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
                 #loss, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
-                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
+                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                #latent_loss = F.mse_loss(encoded, translated)
+                #mse_loss = latent_loss
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
                 #loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]],
                 #                         j                                batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon, batch_x[:,:,0::2])
-                #latent_loss = F.mse_loss(encoded, translated)
 
-                #loss = latent_loss + recon_loss + encoded_norms
+                #loss = latent_loss + loss
                 # take loss of pred_y[:,:,1:3,:,:] and batch_y[:,:,4:5,:,:] but multiply both by batch_static[np.newaxis, np.newaxis, :, :, :]
                 #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
                 #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
@@ -127,11 +127,9 @@ class UNet(Base_method):
                 # self.component_3.append(std_div.item())
                 # self.component_4.append(reg_loss.item())
                 # self.component_5.append(sum_loss.item())
-
-
                 # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
                 #     try:
-                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1),torch.tensor(self.component_2),torch.tensor(self.component_3),torch.tensor(self.component_4),torch.tensor(self.component_5),verbose=False)
+                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1[-70:]),torch.tensor(self.component_2[-70:]),torch.tensor(self.component_3[-70:]),torch.tensor(self.component_4[-70:]),torch.tensor(self.component_5[-70:]),verbose=False)
                 #     except:
                 #         print ("FAILURE in softadapt")
                 #         pdb.set_trace()

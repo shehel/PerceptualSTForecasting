@@ -20,7 +20,7 @@ try:
 except AttributeError:
     pass
 
-
+from torch.autograd import grad
 class Base_method(object):
     """Base Method.
 
@@ -145,7 +145,7 @@ class Base_method(object):
             results_all[k] = results_strip
         return results_all
 
-    def _nondist_forward_collect(self, data_loader, length=None, gather_data=False):
+    def _nondist_forward_grad(self, data_loader, length=None, gather_data=False):
         """Forward and collect predictios.
 
         Args:
@@ -161,16 +161,20 @@ class Base_method(object):
         prog_bar = ProgressBar(len(data_loader))
         length = len(data_loader.dataset) if length is None else length
         for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
-            with torch.no_grad():
-                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y,_ = self._predict(batch_x, batch_y)
+            batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
+            pred_y,_ = self._predict(batch_x, batch_y)
+            # make it so that pred_y requires grad
+            self.model_optim.zero_grad()
 
+            _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
 
+            loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
+            output_gradients = grad(loss, pred_y, retain_graph=True)[0]
             if gather_data:  # return raw datas
                 results.append(dict(zip(['inputs', 'preds', 'trues'],
                                         [batch_x[:,:,4:5,:,:].cpu().numpy(),
-                                     pred_y[:,:,4:5,:,:].cpu().numpy()*batch_static.numpy(),
-                                     batch_y[:,:,4:5,:,:].cpu().numpy()*batch_static.numpy()])))
+                                        output_gradients[:,:,4:5,:,:].cpu().numpy()*batch_static.cpu().numpy(),
+                                     batch_y[:,:,4:5,:,:].cpu().numpy()*batch_static.cpu().numpy()])))
             else:  # return metrics
                 #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
                 #                     data_loader.dataset.mean, data_loader.dataset.std,
@@ -195,6 +199,62 @@ class Base_method(object):
         #losses_m = self.criterion_cpu(preds, trues)
         losses_m= self.criterion(preds, trues)
         results_all["loss"] = losses_m
+        return results_all
+
+    def _nondist_forward_collect(self, data_loader, length=None, gather_data=False):
+        """Forward and collect predictios.
+
+        Args:
+            data_loader: dataloader of evaluation.
+            length (int): Expected length of output arrays.
+            gather_data (bool): Whether to gather raw predictions and inputs.
+
+        Returns:
+            results_all (dict(np.ndarray)): The concatenated outputs.
+        """
+        # preparation
+        results = []
+        prog_bar = ProgressBar(len(data_loader))
+        length = len(data_loader.dataset) if length is None else length
+        for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
+            with torch.no_grad():
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+                pred_y,_ = self._predict(batch_x, batch_y)
+
+
+            if gather_data:  # return raw datas
+                results.append(dict(zip(['inputs', 'preds', 'trues'],
+                                        [batch_x[:,:,4:5,:,:].cpu().numpy(),
+                                     pred_y[:,:,4:5,:,:].cpu().numpy(),
+                                     batch_y[:,:,4:5,:,:].cpu().numpy()])))
+            else:  # return metrics
+                #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
+                #                     data_loader.dataset.mean, data_loader.dataset.std,
+                #                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
+                eval_res = {}
+                eval_res['train_loss'],eval_res['total_loss'],eval_res['mse'],eval_res['div'],eval_res['div_std'],eval_res['std'], eval_res['sum'] = self.criterion(pred_y, batch_y)
+                for k in eval_res.keys():
+                    eval_res[k] = eval_res[k].cpu().numpy().reshape(1)
+                results.append(eval_res)
+
+            prog_bar.update()
+            if self.args.empty_cache:
+                torch.cuda.empty_cache()
+
+        # post gather tensors
+        results_all = {}
+        for k in results[0].keys():
+            results_all[k] = np.concatenate([batch[k] for batch in results], axis=0)
+        preds = torch.tensor(results_all['preds'])
+        #results['trues'] = results['trues'][:,0:1,4:5,70,65]
+        trues = torch.tensor(results_all['trues'])
+        #losses_m = self.criterion_cpu(preds, trues)
+        static_ch = torch.ones_like(trues)
+        losses_m= self.criterion(preds, trues, static_ch)
+
+        results_all["loss"] = losses_m
+        _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = losses_m
+        results_all["loss"][0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
         return results_all
 
     def vali_one_epoch(self, runner, vali_loader, **kwargs):
@@ -238,6 +298,23 @@ class Base_method(object):
             results = self._dist_forward_collect(test_loader, gather_data=True)
         else:
             results = self._nondist_forward_collect(test_loader, gather_data=True)
+
+        return results
+    def grads_one_epoch(self, runner, test_loader, **kwargs):
+        """Evaluate the model with test_loader.
+
+        Args:
+            runner: the trainer of methods.
+            test_loader: dataloader of testing.
+
+        Returns:
+            list(tensor, ...): The list of inputs and predictions.
+        """
+        self.model.eval()
+        if self.dist and self.world_size > 1:
+            results = self._dist_forward_collect(test_loader, gather_data=True)
+        else:
+            results = self._nondist_forward_grad(test_loader, gather_data=True)
 
         return results
 

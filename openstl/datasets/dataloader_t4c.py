@@ -61,18 +61,20 @@ def find_largest(matrix, topk):
     # Flatten the matrix to a 1D array
     flat_matrix = matrix.flatten()
 
-    # Sort the array in descending order
-    sorted_indices = np.argsort(flat_matrix)[::-1]
+    # Step 2: Flatten the matrix and get sorting indices
+    flattened = matrix.flatten()
+    sorted_indices = np.argsort(-np.abs(flattened))  # Sort by magnitude, descending
 
-    # Set the largest 1000 values to 1 and the rest to 0
-    modified_array = np.zeros_like(flat_matrix)
-    modified_array[sorted_indices[:topk]] = 1
+    # Step 3: Select top 1000 largest indices
+    top_indices = sorted_indices[:topk]
 
-    # Reshape the modified array back to the original matrix shape
-    modified_matrix = modified_array.reshape(matrix.shape)
+    # Step 4: Randomly sample 500 from top 1000 indices
+    random_500_indices = np.random.choice(top_indices, 20, replace=False)
 
-    return modified_matrix
-
+    # Step 5: Create the mask
+    mask = np.zeros_like(matrix)
+    np.put(mask, random_500_indices, 1)
+    return mask
 def activate_code(probability):
     """
     Activate a piece of code with a defined probability using Bernoulli sampling from scipy.
@@ -131,8 +133,8 @@ class T4CDataset(Dataset):
         static_list = list(Path(self.root_dir).rglob(self.static_filter))
 
 
-        # for city in static_list:
-        #     self.static_dict[city.parts[-2]] = load_h5_file(city)
+        for city in static_list:
+             self.static_dict[city.parts[-2]] = load_h5_file(city)
         for i, file in enumerate(self.file_list):
             self.file_data.append(load_h5_file(file))
 
@@ -162,10 +164,14 @@ class T4CDataset(Dataset):
         #two_hours = 0 + (two_hours * (20 - 0))
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
+        # TODO
         if self.test:
             random_int_x = 312
             random_int_y = 68
         else:
+            #random_int_x = 312
+            #random_int_y = 68
+
             random_int_x = random.randint(0, 300)
             random_int_y = random.randint(0, 300)
         two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
@@ -175,19 +181,25 @@ class T4CDataset(Dataset):
         #two_hours = two_hours/255
     
         dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
-        #static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
+        static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
         #static_ch = static_ch/255
         # get mean of of dynamic input across first axis
         inp_mean = np.mean(dynamic_input, axis=0)
-
         # remove mean from output data
-        output_data = output_data - inp_mean
-        static_ch = inp_mean[4,:,:]
-        output_data = output_data[:,0::1,:,:]
+        #output_data = output_data - inp_mean
+        #static_ch = inp_mean[4,:,:]
+        # output_data = output_data[:,0::1,:,:]
+        static_ch = static_ch[0, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
+        static_ch = static_ch/static_ch.sum()
+        # ma    e static_ch a 128x128 matrix of ones
+        #static_ch = np.ones((128,128))
         if self.test:
             static_ch = np.where(static_ch > 0, 1,0)
+            #static_ch = np.ones((128,128))
         else:
-            static_ch = np.where(static_ch > 0, 1,0)
+            #static_ch = find_largest(inp_mean[4], 1000)
+            #static_ch = np.where(static_ch > 0, 1,0)
+            static_ch = static_ch
 
 
         static_ch = static_ch[np.newaxis, np.newaxis, :, :]
@@ -199,8 +211,14 @@ class T4CDataset(Dataset):
         # dynamic_input[:,:,:,0:64] = 0
         # dynamic_input[:,:,:,65:] = 0
 
+        # zero out all but a 5x5 patch around 64,64 in static_ch
+        # static_ch[:,:,0:58,:] = 0
+        # static_ch[:,:,71:,:] = 0
+        # static_ch[:,:,:,0:58] = 0
+        # static_ch[:,:,:,71:] = 0
+
         # static_ch[:,:,64,64] = 1
-        # zero out static channels
+        # #zero out static channels
         # static_ch[:,:,0:64,:] = 0
         # static_ch[:,:,65:,:] = 0
         # static_ch[:,:,:,0:64] = 0
@@ -227,13 +245,15 @@ def load_data(batch_size, val_batch_size, data_root,
               in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
 
     try:
-        data_root = Dataset.get(dataset_id="59b1fd80e3274676aeba314c832bbd85").get_local_copy()
+        #data_root = Dataset.get(dataset_id="20fef9fe5f0b49319a7f380ae16d5d1e").get_local_copy() # berlin_full
+        data_root = Dataset.get(dataset_id="6ecb9b57d2034556829ebeb9c8a99d63").get_local_copy() # berlin_full
+        #data_root = Dataset.get(dataset_id="59b1fd80e3274676aeba314c832bbd85").get_local_copy()
         #data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
     train_filter = "**/training/*8ch.h5"
     val_filter = "**/validation/*8ch.h5"
-    train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
+    train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=False)
     val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
     test_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
 

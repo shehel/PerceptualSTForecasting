@@ -25,9 +25,9 @@ class SimVP(Base_method):
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
         self.criterion = DifferentialDivergenceLoss()
-        self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
-        self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.adapt_object = LossWeightedSoftAdapt(beta=-0.1)
+        self.iters_to_make_updates = 70
+        self.adapt_weights = torch.tensor([1,0,0,0,1])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -94,6 +94,8 @@ class SimVP(Base_method):
 
             with self.amp_autocast():
                 pred_y, translated = self._predict(batch_x)
+                # clam pred_y to be between 0 and 255
+                #pred_y = torch.clamp(pred_y, 0, 255)
                 #encoded = self.model.encode(batch_y)
                 #recon = self.model.recon(batch_x)
                 #reg_loss = self.criterion(torch.std(pred_y[:,:,2:3,:,:], dim=1)*batch_static[:,0], torch.std(batch_y[:,:,4:5,:,:], dim=1)*batch_static[:,0])
@@ -105,7 +107,7 @@ class SimVP(Base_method):
                 #recon_loss = loss
                 #encoded_norms = loss
                 
-                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
+                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
 
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
@@ -123,31 +125,33 @@ class SimVP(Base_method):
                 #mse_loss = self.criterion(pred_y, batch_y[:,:,0::2])
                 #reg_loss = self.criterion(translated, encoded)
 
-                # self.component_1.append(mse_loss.item())
-                # self.component_2.append(mse_div.item())
-                # self.component_3.append(std_div.item())
-                # self.component_4.append(reg_loss.item())
-                # self.component_5.append(sum_loss.item())
 
+            #     self.component_1.append(mse_loss.item())
+            #     self.component_2.append(mse_div.item())
+            #     self.component_3.append(std_div.item())
+            #     self.component_4.append(reg_loss.item())
+            #     self.component_5.append(sum_loss.item())
+            # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
+            #         try:
+            #             #self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1[-71:]),torch.tensor(self.component_2[-71:]),torch.tensor(self.component_3[-71:]),torch.tensor(self.component_4[-71:]),torch.tensor(self.component_5[-71:]),verbose=True)
+            #             self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1),torch.tensor(self.component_2),torch.tensor(self.component_3),torch.tensor(self.component_4),torch.tensor(self.component_5),verbose=True)
+            #             # print elements in self.adapt weights after rounding it to nearest 2 decimal places
+            #             print ("adapt weights: ", torch.round(self.adapt_weights*100)/100)
 
-                # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
-                #     try:
-                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1),torch.tensor(self.component_2),torch.tensor(self.component_3),torch.tensor(self.component_4),torch.tensor(self.component_5),verbose=True)
-                #     except:
-                #         print ("FAILURE in softadapt")
-                #         pdb.set_trace()
-                #     self.component_1 = []
-                #     self.component_2 = []
-                #     self.component_3 = []
-                #     self.component_4 = []
-                #     self.component_5 = []
-                #     self.component_1.append(mse_loss.item())
-                #     self.component_2.append(mse_div.item())
-                #     self.component_3.append(std_div.item())
-                #     self.component_4.append(reg_loss.item())
-                #     self.component_5.append(sum_loss.item())
-
-                # self.iter += 1
+            #         except:
+            #             print ("FAILURE in softadapt")
+            #             pdb.set_trace()
+            #         self.component_1 = []
+            #         self.component_2 = []
+            #         self.component_3 = []
+            #         self.component_4 = []
+            #         self.component_5 = []
+            #         self.component_1.append(mse_loss.item())
+            #         self.component_2.append(mse_div.item())
+            #         self.component_3.append(std_div.item())
+            #         self.component_4.append(reg_loss.item())
+            #         self.component_5.append(sum_loss.item())
+            # self.iter += 1
 
 
             if self.loss_scaler is not None:

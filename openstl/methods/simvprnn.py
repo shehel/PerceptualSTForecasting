@@ -26,9 +26,10 @@ class SimVPRnn(Base_method):
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
         self.criterion = DifferentialDivergenceLoss()
-        self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
-        self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.adapt_object = NormalizedSoftAdapt(beta=-1.5)
+        self.iters_to_make_updates = 800
+        self.adapt_weights = torch.tensor([1,0,0,0,1])
+        #self.adapt_weights = torch.tensor([40,20,20,40,10])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -120,8 +121,9 @@ class SimVPRnn(Base_method):
                 #recon_loss = loss
                 #encoded_norms = loss
                 
-                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
+                #_, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
 
+                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
@@ -147,7 +149,8 @@ class SimVPRnn(Base_method):
 
                 # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
                 #     try:
-                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1),torch.tensor(self.component_2),torch.tensor(self.component_3),torch.tensor(self.component_4),torch.tensor(self.component_5),verbose=True)
+                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1[-71:]),torch.tensor(self.component_2[-71:]),torch.tensor(self.component_3[-71:]),torch.tensor(self.component_4[-71:]),torch.tensor(self.component_5[-71:]),verbose=True)
+                #         print ("adapt weights: ", torch.round(self.adapt_weights*100)/100)
                 #     except:
                 #         print ("FAILURE in softadapt")
                 #         pdb.set_trace()

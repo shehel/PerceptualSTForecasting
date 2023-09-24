@@ -42,7 +42,7 @@ def get_ani(mat):
     fig, ax = plt.subplots(figsize=(8, 8))
     imgs = []
     for img in mat:
-        img = ax.imshow(img, animated=True)
+        img = ax.imshow(img, animated=True, vmax=50, vmin=0)
         imgs.append([img])
     ani = animation.ArtistAnimation(fig, imgs, interval=1000, blit=True, repeat_delay=3000)
     plt.close()
@@ -127,14 +127,14 @@ class BaseExperiment(object):
         base_dir = self.args.res_dir if self.args.res_dir is not None else 'work_dirs'
         try:
             task = Task.get_task(task_id=self.args.ex_name)
-            model_path = task.artifacts['best_model_weights'].get_local_copy()
-            #model_path = task.artifacts['latest_model_weights'].get_local_copy()
+            #model_path = task.artifacts['best_model_weights'].get_local_copy()
+            model_path = task.artifacts['latest_model_weights'].get_local_copy()
             # copy the model at location self.path to ./work_dirs/task.name
             # but make the dir before if it doesnt exist
             if not os.path.exists(f"{base_dir}/{task.name}"):
                 os.makedirs(f"{base_dir}/{task.name}/checkpoints")
-            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
-            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
+            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
+            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
             self.args.ex_name = task.name
         except:
             print ("Not a clearml task. Using local directory")
@@ -443,10 +443,10 @@ class BaseExperiment(object):
     def test(self):
         """A testing loop of STL methods"""
         if self.args.test:
-            best_model_path = osp.join(self.path, 'checkpoint.pth')
-            #best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
-            self._load_from_state_dict(torch.load(best_model_path))
-            #self._load(best_model_path)
+            #best_model_path = osp.join(self.path, 'checkpoint.pth')
+            best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
+            #self._load_from_state_dict(torch.load(best_model_path))
+            self._load(best_model_path)
 
 
         self.call_hook('before_val_epoch')
@@ -454,8 +454,61 @@ class BaseExperiment(object):
         self.call_hook('after_val_epoch')
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
+
+
+        # TODO Fix inp_mean calculation since adding by results will make it expand dims
+
+        #inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
+        #results["preds"] = ((results["preds"] + inp_mean)*self.train_loader.dataset.s)+self.train_loader.dataset.m
+        #trues = trues[:,:,0::2]
+        #preds = preds[:,:,0::2]
+        #trues = trues[:,:,2:3]#, 62-10,92-40]
+
+        if 'weather' in self.args.dataname:
+            metric_list, spatial_norm = self.args.metrics, True
+            channel_names = self.test_loader.dataset.data_name if 'mv' in self.args.dataname else None
+        else:
+            metric_list, spatial_norm, channel_names = self.args.metrics, False, None
+        eval_res, eval_log = metric(results['preds'], results['trues'],
+                                    self.test_loader.dataset.mean, self.test_loader.dataset.std,
+                                    metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
+        results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
+
+        if self._rank == 0:
+            print_log(eval_log)
+            folder_path = osp.join(self.path, 'saved_comb1')
+            check_dir(folder_path)
+
+            if self.args.ex_name.endswith('unet'):
+                for np_data in ['metrics', 'inputs', 'trues', 'preds']:
+                    np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
+            else:
+                for np_data in ['metrics', 'trues', 'preds']:
+                    np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
+
+        return eval_res['mse']
+
+
+    def get_grads(self):
+        """A testing loop of STL methods"""
+        if self.args.test:
+            best_model_path = osp.join(self.path, 'checkpoint.pth')
+            #best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
+            self._load_from_state_dict(torch.load(best_model_path))
+            #self._load(best_model_path)
+
+
+        self.call_hook('before_val_epoch')
+        results = self.method.grads_one_epoch(self, self.test_loader)
+        self.call_hook('after_val_epoch')
+
+        # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
         
         
+        # TODO Fix inp_mean calculation since adding by results will make it expand dims
+
+        #inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
+        #results["preds"] = ((results["preds"] + inp_mean)*self.train_loader.dataset.s)+self.train_loader.dataset.m
         #trues = trues[:,:,0::2]
         #preds = preds[:,:,0::2]
         #trues = trues[:,:,2:3]#, 62-10,92-40]
@@ -473,6 +526,7 @@ class BaseExperiment(object):
         if self._rank == 0:
             print_log(eval_log)
             folder_path = osp.join(self.path, 'saved_comb')
+            print ("Saving to ", folder_path)
             check_dir(folder_path)
 
             if self.args.ex_name.endswith('unet'):
