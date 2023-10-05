@@ -35,7 +35,7 @@ class SimVPGAN(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,1,1,0,0.00000001])
+        self.adapt_weights = torch.tensor([1,1,1,0,0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
