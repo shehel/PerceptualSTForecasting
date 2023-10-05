@@ -5,13 +5,16 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from timm.utils import AverageMeter
 
-from openstl.models import SimVP_Model
+from openstl.models import SimVP_Model, SimVPGAN_Model
 from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
 from .base_method import Base_method
+from openstl.core.optim_scheduler import get_optim_scheduler
 
 from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
 import pdb
-class SimVP(Base_method):
+
+
+class SimVPGAN(Base_method):
     r"""SimVP
 
     Implementation of `SimVP: Simpler yet Better Video Prediction
@@ -21,14 +24,18 @@ class SimVP(Base_method):
 
     def __init__(self, args, device, steps_per_epoch):
         Base_method.__init__(self, args, device, steps_per_epoch)
-        self.model = self._build_model(self.config)
-        self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
+        self.model, self.d_model = self._build_model(self.config)
+        self.model_optim, self.scheduler, self.by_epoch, self.dmodel_optim, self.d_scheduler, self.d_epoch = self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
         self.criterion = DifferentialDivergenceLoss()
+        self.BCE_loss = nn.BCEWithLogitsLoss()
+        # set 1 to be a torch.tensor and move it to gpu
+        self.real_label = torch.tensor(1.).to(self.device)
+        self.fake_label = torch.tensor(0.).to(self.device)
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,1,10,0,0.00000001])
+        self.adapt_weights = torch.tensor([1,1,1,0,0.00000001])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -40,9 +47,30 @@ class SimVP(Base_method):
 # create the SoftDTW distance function
         #self.criterion = pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=True)
         #self.criterion_cpu =  pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=False)
+    def get_target_tensor(self, prediction, target_is_real):
+        """Create label tensors with the same size as the input.
 
+        Parameters:
+            prediction (tensor) - - tpyically the prediction from a discriminator
+            target_is_real (bool) - - if the ground truth label is for real images or fake images
+
+        Returns:
+            A label tensor filled with ground truth label, and with the size of the input
+        """
+
+        if target_is_real:
+            target_tensor = self.real_label
+        else:
+            target_tensor = self.fake_label
+        return target_tensor.expand_as(prediction)
+    
+    def _init_optimizer(self, steps_per_epoch):
+        opt_gen, sched_gen, epoch_gen = get_optim_scheduler(
+            self.args, self.args.epoch, self.model, steps_per_epoch)
+        opt_dis, sched_dis, epoch_dis = get_optim_scheduler(self.args, self.args.epoch, self.d_model, steps_per_epoch)
+        return opt_gen, sched_gen, epoch_gen, opt_dis, sched_dis, epoch_dis
     def _build_model(self, args):
-        return SimVP_Model(**args).to(self.device)
+        return SimVP_Model(**args).to(self.device), SimVPGAN_Model().to(self.device)
 
     def _predict(self, batch_x, batch_y=None, **kwargs):
         """Forward the model"""
@@ -87,14 +115,23 @@ class SimVP(Base_method):
         for batch_x, batch_y, batch_static in train_pbar:
 
             data_time_m.update(time.time() - end)
+            
+            self.d_model.zero_grad()
+            
+            
             self.model_optim.zero_grad()
 
             if not self.args.use_prefetcher:
                 batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
             runner.call_hook('before_train_iter')
 
+            b_size = batch_y.size(0)
             with self.amp_autocast():
-                pred_y, translated = self._predict(batch_x)
+                output = self.d_model(batch_y).view(-1)
+                label = self.get_target_tensor(output, True)   #torch.full((b_size,), self.real_label, dtype=torch.float, device=self.device)
+                errD_real = self.BCE_loss(output, label)
+                errD_real.backward()
+                D_x = output.mean().item()
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
                 #encoded = self.model.encode(batch_y)
@@ -107,10 +144,30 @@ class SimVP(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
+                pred_y, translated = self._predict(batch_x)
+                output = self.d_model(pred_y.detach()).view(-1)
+                label = self.get_target_tensor(output, False)
+                #label.fill_(self.fake_label)
+                errD_fake = self.BCE_loss(output, label)
+                errD_fake.backward()
+                D_G_z1 = output.mean().item()
+                errD = errD_real + errD_fake
+                self.dmodel_optim.step()
                 _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
                 
-
-                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
+                self.model.zero_grad()
+                #label.fill_(self.real_label)  # fake labels are real for generator cost
+                # Since we just updated D, perform another forward pass of all-fake batch through D
+                output = self.d_model(pred_y).view(-1)
+                label = self.get_target_tensor(output, True)
+                # Calculate G's loss based on this output
+                loss = self.BCE_loss(output, label)
+                # Calculate gradients for G
+                D_G_z2 = output.mean().item()
+                # Update G
+                #self.model_optim.step()
+                loss = loss+(self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss)
+                #loss.backward()
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
                 #latent_loss = F.mse_loss(encoded, translated)
@@ -184,6 +241,7 @@ class SimVP(Base_method):
                 losses_m.update(reduce_tensor(loss), batch_x.size(0))
 
             if not self.by_epoch:
+                self.d_scheduler.step()
                 self.scheduler.step()
             runner.call_hook('after_train_iter')
             runner._iter += 1

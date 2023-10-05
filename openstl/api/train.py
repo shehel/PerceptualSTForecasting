@@ -81,7 +81,7 @@ class BaseExperiment(object):
         self._preparation(dataloaders)
         if self._rank == 0:
             print_log(output_namespace(self.args))
-            self.display_method_info()
+            #self.display_method_info()
 
     def _acquire_device(self):
         """Setup devices"""
