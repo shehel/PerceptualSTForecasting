@@ -7,7 +7,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import UNet_Model
-from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
+from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
 from .base_method import Base_method
 import pdb
 
@@ -27,6 +27,7 @@ class UNet(Base_method):
         #self.criterion = nn.MSELoss()
         self.loss_wgt = torch.tensor(1)
         self.criterion = DifferentialDivergenceLoss()
+        self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=1.5)
         self.iters_to_make_updates = 100
         self.adapt_weights = torch.tensor([1,0,0,0,1])

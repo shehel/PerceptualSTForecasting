@@ -62,8 +62,8 @@ class SimVP_Model(nn.Module):
 
         embed, skip = self.enc(x)
         _, C_, H_, W_ = embed.shape
-
         z = embed.view(B, T, C_, H_, W_)
+
         encoded = self.hid(z)
         hid = encoded.reshape(B*T, C_, H_, W_)
         Y = self.dec(hid, skip)
