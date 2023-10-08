@@ -36,7 +36,7 @@ class SimVPGAN(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,1,5,0,0])
+        self.adapt_weights = torch.tensor([1,0.5,0.25,0,0])
         n_steps = 100
         y_50 = 0.01
         decay_constant = -math.log(y_50) / 50
@@ -136,7 +136,9 @@ class SimVPGAN(Base_method):
 
             b_size = batch_y.size(0)
             with self.amp_autocast():
-                output = self.d_model(batch_y).view(-1)
+
+
+                output = self.d_model(torch.diff(batch_y, dim=1)).view(-1)
                 label = self.get_target_tensor(output, True)   #torch.full((b_size,), self.real_label, dtype=torch.float, device=self.device)
                 errD_real = self.BCE_loss(output, label)
                 errD_real.backward()
@@ -154,20 +156,23 @@ class SimVPGAN(Base_method):
                 #recon_loss = loss
                 #encoded_norms = loss
                 pred_y, translated = self._predict(batch_x)
-                output = self.d_model(pred_y.detach()).view(-1)
+                # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
+                pred_yy = torch.cat((batch_y[:,0:1,:,:,:], pred_y), dim=1)
+                pred_yy = torch.diff(pred_yy, dim=1)
+                output = self.d_model(pred_yy.detach()).view(-1)
                 label = self.get_target_tensor(output, False)
-                #label.fill_(self.fake_label)
+                #label.fill_(self.fake_labelw)
                 errD_fake = self.BCE_loss(output, label)
                 errD_fake.backward()
                 D_G_z1 = output.mean().item()
                 errD = errD_real + errD_fake
                 self.dmodel_optim.step()
-                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,1:,4:5,:,:], batch_static)
                 
                 self.model.zero_grad()
                 #label.fill_(self.real_label)  # fake labels are real for generator cost
                 # Since we just updated D, perform another forward pass of all-fake batch through D
-                output = self.d_model(pred_y).view(-1)
+                output = self.d_model(pred_yy).view(-1)
                 label = self.get_target_tensor(output, True)
                 # Calculate G's loss based on this output
                 gen_loss = self.BCE_loss(output, label)

@@ -169,8 +169,8 @@ class T4CDataset(Dataset):
             random_int_x = 312
             random_int_y = 68
         else:
-            #random_int_x = 312
-            #random_int_y = 68
+            # random_int_x = 312
+            # random_int_y = 68
 
             random_int_x = random.randint(0, 300)
             random_int_y = random.randint(0, 300)
@@ -180,7 +180,7 @@ class T4CDataset(Dataset):
         #two_hours = (two_hours - self.m) / self.s
         #two_hours = two_hours/255
     
-        dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
+        dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length-1:self.pre_seq_length+self.aft_seq_length]
         static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
         #static_ch = static_ch/255
         # get mean of of dynamic input across first axis
@@ -190,11 +190,12 @@ class T4CDataset(Dataset):
         #static_ch = inp_mean[4,:,:]
         # output_data = output_data[:,0::1,:,:]
         static_ch = static_ch[0, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
-        static_ch = static_ch/static_ch.sum()
+        static_ch = static_ch/255
         # ma    e static_ch a 128x128 matrix of ones
-        #static_ch = np.ones((128,128))
+        static_ch = np.ones((128,128))
         if self.test:
-            static_ch = np.where(static_ch > 0, 1,0)
+            #static_ch = np.where(static_ch > 0, 1,0)
+            static_ch = static_ch
             #static_ch = np.ones((128,128))
         else:
             #static_ch = find_largest(inp_mean[4], 1000)
