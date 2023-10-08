@@ -17,7 +17,7 @@ class UNet_Model(nn.Module):
     """
 
     def __init__(
-        self, in_channels=1, out_ts=1, out_ch=4, depth=5, wf=6, padding=False, batch_norm=False, up_mode="upconv",
+        self, in_channels=96, out_ts=12, out_ch=8, depth=3, wf=6, padding=True, batch_norm=True, up_mode="upconv",
         pos_emb=False, **kwargs
     ):
         super(UNet_Model, self).__init__()

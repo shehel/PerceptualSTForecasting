@@ -116,7 +116,7 @@ class Base_method(object):
                 part_size = batch_x.shape[0]
             with torch.no_grad():
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y,_ = self._predict(batch_x, batch_y)
+                pred_y,_ = self._predict(batch_x, batch_y[:,1:,:,:])
 
             if gather_data:  # return raw datas
                 results.append(dict(zip(['inputs', 'preds', 'trues'],
@@ -162,7 +162,7 @@ class Base_method(object):
         length = len(data_loader.dataset) if length is None else length
         for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
             batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
-            pred_y,_ = self._predict(batch_x, batch_y)
+            pred_y,batch_y = self._predict(batch_x, batch_y)
             # make it so that pred_y requires grad
             self.model_optim.zero_grad()
 
@@ -219,14 +219,16 @@ class Base_method(object):
         for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
             with torch.no_grad():
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y,_ = self._predict(batch_x, batch_y)
+                pred_y,new_batch_y = self._predict(batch_x, batch_y, test=True)
 
+                #pred_y = batch_x + pred_y
 
             if gather_data:  # return raw datas
-                results.append(dict(zip(['inputs', 'preds', 'trues'],
+                results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
                                         [batch_x[:,:,4:5,:,:].cpu().numpy(),
                                      pred_y[:,:,4:5,:,:].cpu().numpy(),
-                                     batch_y[:,:,4:5,:,:].cpu().numpy()])))
+                                     new_batch_y[:,:,4:5,:,:].cpu().numpy(),
+                                     batch_static.cpu().numpy()])))
             else:  # return metrics
                 #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
                 #                     data_loader.dataset.mean, data_loader.dataset.std,
@@ -249,7 +251,8 @@ class Base_method(object):
         #results['trues'] = results['trues'][:,0:1,4:5,70,65]
         trues = torch.tensor(results_all['trues'])
         #losses_m = self.criterion_cpu(preds, trues)
-        static_ch = torch.ones_like(trues)
+        static_ch = torch.tensor(results_all['static'])
+        #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
         losses_m= self.criterion(preds, trues, static_ch)
 
         results_all["loss"] = losses_m
