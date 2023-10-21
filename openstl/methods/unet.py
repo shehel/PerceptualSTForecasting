@@ -7,7 +7,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import UNet_Model
-from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
+from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
 from .base_method import Base_method
 import pdb
 
@@ -27,9 +27,10 @@ class UNet(Base_method):
         #self.criterion = nn.MSELoss()
         self.loss_wgt = torch.tensor(1)
         self.criterion = DifferentialDivergenceLoss()
+        self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=1.5)
         self.iters_to_make_updates = 100
-        self.adapt_weights = torch.tensor([1,0,0,0,1])
+        self.adapt_weights = torch.tensor([0,0,1,0,0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -72,8 +73,8 @@ class UNet(Base_method):
         losses_m = AverageMeter()
         losses_mse_m = AverageMeter()
         losses_reg_m = AverageMeter()
-        losses_div_m = AverageMeter()
-        losses_div_s = AverageMeter()
+        losses_reg_s = AverageMeter()
+        losses_std = AverageMeter()
         losses_total = AverageMeter()
         losses_sum = AverageMeter()
         self.model.train()
@@ -97,10 +98,13 @@ class UNet(Base_method):
                 #recon = self.model.recon(batch_x)
                 #mse_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]], batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
                 #loss, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
-                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,0:1,:,:], batch_y[:,:,4:5,:,:], batch_static)
                 #latent_loss = F.mse_loss(encoded, translated)
                 #mse_loss = latent_loss
-                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
+                loss = F.mse_loss(pred_y[:,:,0:1,64,64], batch_y[:,:,4:5,64,64])
+                #self.adapt_weights[2] * std_div + (1-self.adapt_weights[2]) * mse_div
+
+                #loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
                 #loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]],
                 #                         j                                batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
@@ -164,11 +168,11 @@ class UNet(Base_method):
             #loss, total_loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,:,:], batch_y[:,:,4:5,:,:])
             if not self.dist:
                 losses_m.update(loss.item(), batch_x.size(0))
-                losses_mse_m.update(mse_loss.item(), batch_x.size(0))
-                losses_reg_m.update(reg_loss.item(), batch_x.size(0))
-                losses_div_m.update(mse_div.item(), batch_x.size(0))
-                losses_div_s.update(std_div.item(), batch_x.size(0))
                 losses_total.update(total_loss.item(), batch_x.size(0))
+                losses_mse_m.update(mse_loss.item(), batch_x.size(0))
+                losses_reg_m.update(reg_mse.item(), batch_x.size(0))
+                losses_reg_s.update(reg_std.item(), batch_x.size(0))
+                losses_std.update(std_loss.item(), batch_x.size(0))
                 losses_sum.update(sum_loss.item(), batch_x.size(0))
 
             if self.dist:
@@ -182,7 +186,7 @@ class UNet(Base_method):
             if self.rank == 0:
                 log_buffer = 'train loss: {:.4f}'.format(loss.item())
                 log_buffer += ' | train mse loss: {:.4f}'.format(mse_loss.item())
-                log_buffer += ' | train reg loss: {:.4f}'.format(reg_loss.item())
+                log_buffer += ' | train reg loss: {:.4f}'.format(reg_mse.item())
                 log_buffer += ' | data time: {:.4f}'.format(data_time_m.avg)
                 train_pbar.set_description(log_buffer)
 
@@ -190,4 +194,4 @@ class UNet(Base_method):
 
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
-        return num_updates, losses_m, losses_mse_m,losses_reg_m,losses_div_m,losses_div_s, losses_total, losses_sum, eta
+        return num_updates, losses_m, losses_total, losses_mse_m,losses_reg_m,losses_reg_s,losses_std, losses_sum, eta

@@ -6,7 +6,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import SimVP_Model
-from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
+from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
 from .base_method import Base_method
 
 from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
@@ -25,9 +25,10 @@ class SimVP(Base_method):
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
         self.criterion = DifferentialDivergenceLoss()
-        self.adapt_object = LossWeightedSoftAdapt(beta=-0.1)
-        self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,0,0,0,1])
+        self.val_criterion = DilateLoss()
+        self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
+        self.iters_to_make_updates = 50
+        self.adapt_weights = torch.tensor([1,0,0,1,0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -73,8 +74,8 @@ class SimVP(Base_method):
         losses_m = AverageMeter()
         losses_mse_m = AverageMeter()
         losses_reg_m = AverageMeter()
-        losses_div_m = AverageMeter()
-        losses_div_s = AverageMeter()
+        losses_reg_s = AverageMeter()
+        losses_std = AverageMeter()
         losses_total = AverageMeter()
         losses_sum = AverageMeter()
         self.model.train()
@@ -106,13 +107,13 @@ class SimVP(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-                
-                _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
-
-                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                #loss = self.adapt_weights[2] * std_div + (1-self.adapt_weights[2]) * (mse_div) + self.adapt_weights[0]*mse_loss
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
-                #latent_loss = F.mse_loss(encoded, translated)
+                #latent_loss = (F.mse_loss(encoded, translated))
+                #loss = mse_loss# + encoded_norms
 
                  
                 
@@ -127,9 +128,9 @@ class SimVP(Base_method):
 
 
             #     self.component_1.append(mse_loss.item())
-            #     self.component_2.append(mse_div.item())
-            #     self.component_3.append(std_div.item())
-            #     self.component_4.append(reg_loss.item())
+            #     self.component_2.append(reg_mse.item())
+            #     self.component_3.append(reg_std.item())
+            #     self.component_4.append(std_loss.item())
             #     self.component_5.append(sum_loss.item())
             # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
             #         try:
@@ -147,9 +148,9 @@ class SimVP(Base_method):
             #         self.component_4 = []
             #         self.component_5 = []
             #         self.component_1.append(mse_loss.item())
-            #         self.component_2.append(mse_div.item())
-            #         self.component_3.append(std_div.item())
-            #         self.component_4.append(reg_loss.item())
+            #         self.component_2.append(reg_mse.item())
+            #         self.component_3.append(reg_std.item())
+            #         self.component_4.append(std_loss.item())
             #         self.component_5.append(sum_loss.item())
             # self.iter += 1
 
@@ -172,11 +173,11 @@ class SimVP(Base_method):
             #loss, total_loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,:,:], batch_y[:,:,4:5,:,:])
             if not self.dist:
                 losses_m.update(loss.item(), batch_x.size(0))
-                losses_mse_m.update(mse_loss.item(), batch_x.size(0))
-                losses_reg_m.update(reg_loss.item(), batch_x.size(0))
-                losses_div_m.update(mse_div.item(), batch_x.size(0))
-                losses_div_s.update(std_div.item(), batch_x.size(0))
                 losses_total.update(total_loss.item(), batch_x.size(0))
+                losses_mse_m.update(mse_loss.item(), batch_x.size(0))
+                losses_reg_m.update(reg_mse.item(), batch_x.size(0))
+                losses_reg_s.update(reg_std.item(), batch_x.size(0))
+                losses_std.update(std_loss.item(), batch_x.size(0))
                 losses_sum.update(sum_loss.item(), batch_x.size(0))
 
             if self.dist:
@@ -190,7 +191,7 @@ class SimVP(Base_method):
             if self.rank == 0:
                 log_buffer = 'train loss: {:.4f}'.format(loss.item())
                 log_buffer += ' | train mse loss: {:.4f}'.format(mse_loss.item())
-                log_buffer += ' | train reg loss: {:.4f}'.format(reg_loss.item())
+                log_buffer += ' | train reg loss: {:.4f}'.format(std_loss.item())
                 log_buffer += ' | data time: {:.4f}'.format(data_time_m.avg)
                 train_pbar.set_description(log_buffer)
 
@@ -198,4 +199,4 @@ class SimVP(Base_method):
 
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
-        return num_updates, losses_m, losses_mse_m,losses_reg_m,losses_div_m,losses_div_s, losses_total, losses_sum, eta
+        return num_updates, losses_m, losses_total, losses_mse_m,losses_reg_m,losses_reg_s,losses_std, losses_sum, eta

@@ -136,7 +136,7 @@ class T4CDataset(Dataset):
         for city in static_list:
              self.static_dict[city.parts[-2]] = load_h5_file(city)
         for i, file in enumerate(self.file_list):
-            self.file_data.append(load_h5_file(file))
+             self.file_data.append(load_h5_file(file))
 
     def _load_h5_file(self, fn, sl):
         return load_h5_file(fn, sl=sl)
@@ -169,11 +169,11 @@ class T4CDataset(Dataset):
             random_int_x = 312
             random_int_y = 68
         else:
-            #random_int_x = 312
-            #random_int_y = 68
+            random_int_x = 312
+            random_int_y = 68
 
-            random_int_x = random.randint(0, 300)
-            random_int_y = random.randint(0, 300)
+            # random_int_x = random.randint(0, 300)
+            # random_int_y = random.randint(0, 300)
         two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
                     random_int_y:random_int_y+128, ]
 
@@ -188,18 +188,17 @@ class T4CDataset(Dataset):
         # remove mean from output data
         #output_data = output_data - inp_mean
         #static_ch = inp_mean[4,:,:]
-        # output_data = output_data[:,0::1,:,:]
+        output_data = output_data[:,0::1,:,:]
         static_ch = static_ch[0, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
-        static_ch = static_ch/static_ch.sum()
-        # ma    e static_ch a 128x128 matrix of ones
+        #static_ch = static_ch/static_ch.max()
         #static_ch = np.ones((128,128))
         if self.test:
             static_ch = np.where(static_ch > 0, 1,0)
-            #static_ch = np.ones((128,128))
+            #a = 1
         else:
             #static_ch = find_largest(inp_mean[4], 1000)
-            #static_ch = np.where(static_ch > 0, 1,0)
-            static_ch = static_ch
+            static_ch = np.where(static_ch > 0, 1,0)
+            #a = 1
 
 
         static_ch = static_ch[np.newaxis, np.newaxis, :, :]
@@ -212,18 +211,7 @@ class T4CDataset(Dataset):
         # dynamic_input[:,:,:,65:] = 0
 
         # zero out all but a 5x5 patch around 64,64 in static_ch
-        # static_ch[:,:,0:58,:] = 0
-        # static_ch[:,:,71:,:] = 0
-        # static_ch[:,:,:,0:58] = 0
-        # static_ch[:,:,:,71:] = 0
-
-        # static_ch[:,:,64,64] = 1
-        # #zero out static channels
-        # static_ch[:,:,0:64,:] = 0
-        # static_ch[:,:,65:,:] = 0
-        # static_ch[:,:,:,0:64] = 0
-        # static_ch[:,:,:,65:] = 0
-
+        #static_ch = static_ch[0,0,59:69,59:69]
 
         return dynamic_input, output_data, static_ch
 
@@ -246,8 +234,8 @@ def load_data(batch_size, val_batch_size, data_root,
 
     try:
         #data_root = Dataset.get(dataset_id="20fef9fe5f0b49319a7f380ae16d5d1e").get_local_copy() # berlin_full
-        data_root = Dataset.get(dataset_id="6ecb9b57d2034556829ebeb9c8a99d63").get_local_copy() # berlin_full
-        #data_root = Dataset.get(dataset_id="59b1fd80e3274676aeba314c832bbd85").get_local_copy()
+        #data_root = Dataset.get(dataset_id="6ecb9b57d2034556829ebeb9c8a99d63").get_local_copy() # berlin_full
+        data_root = Dataset.get(dataset_id="59b1fd80e3274676aeba314c832bbd85").get_local_copy()
         #data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
@@ -256,6 +244,7 @@ def load_data(batch_size, val_batch_size, data_root,
     train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=False)
     val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
     test_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
+
 
     train_set._load_dataset()
     val_set._load_dataset()

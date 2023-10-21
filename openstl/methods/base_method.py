@@ -219,14 +219,20 @@ class Base_method(object):
         for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
             with torch.no_grad():
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y,_ = self._predict(batch_x, batch_y)
+                pred_y,_, trend = self._predict(batch_x, batch_y)
+                assert pred_y.shape == batch_y.shape
+                assert trend.shape == batch_y.shape
+                pred_y = pred_y + trend
+                
+                
 
 
             if gather_data:  # return raw datas
-                results.append(dict(zip(['inputs', 'preds', 'trues'],
+                results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
                                         [batch_x[:,:,4:5,:,:].cpu().numpy(),
                                      pred_y[:,:,4:5,:,:].cpu().numpy(),
-                                     batch_y[:,:,4:5,:,:].cpu().numpy()])))
+                                     batch_y[:,:,4:5,:,:].cpu().numpy(),
+                                     batch_static.cpu().numpy()])))
             else:  # return metrics
                 #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
                 #                     data_loader.dataset.mean, data_loader.dataset.std,
@@ -249,12 +255,13 @@ class Base_method(object):
         #results['trues'] = results['trues'][:,0:1,4:5,70,65]
         trues = torch.tensor(results_all['trues'])
         #losses_m = self.criterion_cpu(preds, trues)
-        static_ch = torch.ones_like(trues)
+        static_ch = torch.tensor(results_all['static'])
+        #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
         losses_m= self.criterion(preds, trues, static_ch)
-
+        #dilate = self.val_criterion(preds, trues, static_ch)
         results_all["loss"] = losses_m
-        _, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = losses_m
-        results_all["loss"][0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
+        _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = losses_m
+        results_all["loss"][0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
         return results_all
 
     def vali_one_epoch(self, runner, vali_loader, **kwargs):

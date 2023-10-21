@@ -50,7 +50,7 @@ class SimVP_Model(nn.Module):
         else:
             self.hid = MidMetaNet(T*hid_S, hid_T, N_T,
                 input_resolution=(H, W), model_type=model_type,
-                mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+                   mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
 
     def forward(self, x_raw):
         B, T, C, H, W = x_raw.shape
@@ -64,6 +64,7 @@ class SimVP_Model(nn.Module):
         _, C_, H_, W_ = embed.shape
 
         z = embed.view(B, T, C_, H_, W_)
+
         encoded = self.hid(z)
         hid = encoded.reshape(B*T, C_, H_, W_)
         Y = self.dec(hid, skip)
@@ -150,7 +151,7 @@ class SimVP_Model(nn.Module):
         _, C_, H_, W_ = embed.shape
 
         z = embed.view(B, T, C_, H_, W_)
-        z = self.hid(z)
+        #z = self.hid(z)
 
         return z
 def sampling_generator(N, reverse=False):

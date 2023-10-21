@@ -52,13 +52,21 @@ def gaussian(window_size, sigma):
     gauss = torch.Tensor([exp(-(x - window_size//2)**2/float(2*sigma**2)) for x in range(window_size)])
     return gauss/gauss.sum()
 
+# def create_window_3D(window_size, channel):
+    # _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
+    # _2D_window = _1D_window.mm(_1D_window.t())
+    # _3D_window = _1D_window.mm(_2D_window.reshape(1, -1)).reshape(window_size, window_size, window_size).float().unsqueeze(0).unsqueeze(0)
+    # window = Variable(_3D_window.expand(channel, 1, window_size, window_size, window_size).contiguous())
+    # return window
 def create_window_3D(window_size, channel):
-    _1D_window = gaussian(window_size, 1.5).unsqueeze(1)
-    _2D_window = _1D_window.mm(_1D_window.t())
-    _3D_window = _1D_window.mm(_2D_window.reshape(1, -1)).reshape(window_size, window_size, window_size).float().unsqueeze(0).unsqueeze(0)
-    window = Variable(_3D_window.expand(channel, 1, window_size, window_size, window_size).contiguous())
-    return window
+    # Create a 3D mean kernel where each value is 1 / (window_size * window_size * window_size)
+    _3D_window = torch.ones((window_size, window_size, window_size)) / (window_size ** 3)
+    _3D_window = _3D_window.float().unsqueeze(0).unsqueeze(0)
 
+    # Expand the kernel across the specified number of channels
+    window = Variable(_3D_window.expand(channel, 1, window_size, window_size, window_size).contiguous())
+
+    return window
 # def _ssim_3D(img1, img2, window, window_size, channel, size_average=True, static_ch=None):
 #     mu1 = F.conv3d(img1, window, padding=window_size//2, groups=channel)
 #     mu2 = F.conv3d(img2, window, padding=window_size//2, groups=channel)
@@ -137,25 +145,26 @@ def _ssim_3D(img1, img2, window, window_size, channel, size_average=True, static
     sigma12 = F.conv3d(img1 * img2, window, padding=window_size//2, groups=channel) - mu1_mu2
 
     # Adding small constants for stability
-    C1 = 0.03**2
-    C2 = C1/2
+    sigma1_sq = torch.clamp(sigma1_sq, min=1e-8)
+    sigma2_sq = torch.clamp(sigma2_sq, min=1e-8)
 
-    # Checking for non-negative sigma values
-    sigma1_sq = torch.clamp(sigma1_sq, min=0.0)
-    sigma2_sq = torch.clamp(sigma2_sq, min=0.0)
+    C1 = 0.01 ** 2
+    C2 = 0.03 ** 2
+    C3 = C2/2
+    #ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
+    #ssim_map_1 = (2 * mu1_mu2 + C1)/(mu1_sq + mu2_sq + C1)
+    #ssim_map_2 = ((2 * torch.sqrt(sigma1_sq+1e-8) * torch.sqrt(sigma2_sq+1e-8)) + C2)/(sigma1_sq + sigma2_sq + C2)
+    #ssim_map_3 = (sigma12 + C3)/((torch.sqrt(sigma1_sq+1e-8) * torch.sqrt(sigma2_sq+1e-8)) + C3)
+    # mask each of the components iwth static_ch
+    #ssim_map_1 = ssim_map_1 * static_ch
+    #ssim_map_2 = ssim_map_2 * static_ch
+    #ssim_map_3 = ssim_map_3 * static_ch
+    #return #1-ssim_map_1.mean(), 1-ssim_map_2.mean(), 1-ssim_map_3.mean()
+    ssim_map_1 = F.mse_loss(mu1 * static_ch, mu2 * static_ch, reduction='mean')
+    ssim_map_2 = F.mse_loss(torch.sqrt(sigma1_sq) * static_ch, torch.sqrt(sigma2_sq) * static_ch, reduction='mean')
+    ssim_map_3 = F.mse_loss(img1 * static_ch, img2 * static_ch, reduction='mean')
+    return ssim_map_1, ssim_map_2, ssim_map_3
 
-    ssim_map_comp1 = F.mse_loss(mu1 * static_ch, mu2 * static_ch, reduction='mean')
-    ssim_map_comp2 = F.mse_loss(torch.sqrt(sigma1_sq)*static_ch, torch.sqrt(sigma2_sq)*static_ch, reduction='mean')
-
-    #ssim_map_comp2 = ((torch.sqrt(sigma1_sq) - torch.sqrt(sigma2_sq))**2)+C1 / (sigma1_sq + sigma2_sq + C1)
-    #take squared error of sigma1 and sigma2 and divide by sigma1*sigma2 + C2
-    #ssim_map_comp2 = (((((torch.sqrt(sigma1_sq) - torch.sqrt(sigma2_sq))**2)+C1) / (sigma1_sq + sigma2_sq + C1))*static_ch).mean()
-    #ssim_map_comp2 = ((1-(((2*sigma1_sq*sigma2_sq)+C1) / (sigma1_sq + sigma2_sq + C1)))*static_ch).mean()
-    #pdb.set_trace()
-    #ssim_map_comp2 = F.mse_loss(sigma1_sq,sigma2_sq)
-
-    #ssim_map_comp3 = ((1-((sigma12 + C2) / (torch.sqrt(sigma1_sq) * torch.sqrt(sigma2_sq) + C2)))*static_ch).mean()
-    return ssim_map_comp1*100000000+m_loss*0.5+ ssim_map_comp2*10000000
 
 def ssim3D(img1, img2, window_size=5, size_average=True, static_ch = None):
     # Permute dimensions to have 'channels' at index 1
@@ -237,13 +246,13 @@ def calculate_ratios(image_timeseries):
     pixel_sums_per_timestep = torch.sum(image_timeseries, dim=(2, 3, 4))  # Shape: (batch, 6)
 
     # Step 2: Calculate the ratios
-    total_pixel_sum = torch.sum(pixel_sums_per_timestep, dim=1, keepdim=True)  # Shape: (batch, 1)
+    #total_pixel_sum = torch.sum(pixel_sums_per_timestep, dim=1, keepdim=True)  # Shape: (batch, 1)
 
     # Add a small epsilon to avoid division by zero
-    epsilon = 1e-8
-    ratios = pixel_sums_per_timestep / (total_pixel_sum + epsilon)
+    #epsilon = 1e-8
+    #ratios = pixel_sums_per_timestep / (total_pixel_sum + epsilon)
 
-    return ratios
+    return pixel_sums_per_timestep
 
 def modified_total_variation_loss(predicted, true):
     """Compute the modified total variation loss.
@@ -329,9 +338,19 @@ def sample_top_pixels_modified(true, pred, mask, pixels=50):
     return sampled_true, sampled_pred
 
 
+class DilateLoss(nn.Module):
+    def __init__(self, alpha=0.1, gamma=0.001, device=None):
+        super(DilateLoss, self).__init__()
+        self.alpha = alpha
+        self.gamma = gamma
+        self.device = device
+
+    def forward(self, pred, true, static_ch):
+        sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch, pixels=50)
+        return dilate_loss(sampled_pred, sampled_true, self.alpha, self.gamma, self.device)[0]
 
 class DifferentialDivergenceLoss(nn.Module):
-    def __init__(self, tau=1, epsilon=1e-8, w1=0.25, w2 =0, w3=0, w4=0, w5=1):
+    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.000001):
         super(DifferentialDivergenceLoss, self).__init__()
         self.tau = tau
         self.epsilon = epsilon
@@ -345,12 +364,13 @@ class DifferentialDivergenceLoss(nn.Module):
         #std_loss = self.ssim(pred, true)
         #mse_loss = dilate_loss(pred[:,:,0,64:65,64], true[:,:,0,64:65,64], alpha=0.1, gamma=0.001, device=pred.device)[0]
         #mse_loss = 1- ssim3D(pred, true, static_ch=static_ch)
-        sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch, pixels=25)
-        mse_loss = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)[0]
+        #sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch, pixels=25)
         # binatrize static_ch
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
-        
-        sum_loss = ssim3D(pred, true, static_ch=static_ch)
+        #mse_loss, reg_mse, reg_std = self.main_loss(pred[:,:,]*static_ch, true[:,:]*static_ch)
+        _, std_loss, mse_loss = ssim3D(pred, true, static_ch=static_ch)
+        #mse_loss = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)[0]
+        #reg_std = self.main_loss(pred*static_ch, true*static_ch)
         # pred = pred * static_ch
         # true = true * static_ch
         #sum_loss = self.main_loss(pred*static_ch, true*static_ch)
@@ -362,8 +382,10 @@ class DifferentialDivergenceLoss(nn.Module):
         # sum_loss = self.main_loss(sum_1, sum_2)
         true_ratios = calculate_ratios(true)
         predicted_ratios = calculate_ratios(pred)
-        #sum_loss = self.main_loss(true_ratios,predicted_ratios)
-
+        sum_loss = self.main_loss(true_ratios,predicted_ratios)
+        #pred = pred * static_ch
+        #true = true * static_ch
+        # mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
 
         #pred_prob = F.softmax(sum_1, dim=1)
         #true_prob = F.softmax(sum_2, dim=1)
@@ -371,9 +393,11 @@ class DifferentialDivergenceLoss(nn.Module):
         # do kl div loss on pred_prob and true_prob using F.kl_div
         #sum_loss = F.kl_div(torch.log(pred_prob + self.epsilon), true_prob, reduction='batchmean')
 
-        std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
+        # std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
+        # std_loss = torch.mean(std_loss * static_ch[:,0])
+        #sum_loss = std_loss
         #sum_loss = F.mse_loss(torch.sum(pred, dim=1), torch.sum(true,dim=1))
-        reg_std = modified_total_variation_loss(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
+        #reg_std = modified_total_variation_loss(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
         #reg_std = modified_total_variation_loss(mu1[:,:,0]*static_ch[:,0],
          #                                       mu2[:,:,0]*static_ch[:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
         #std_loss = SSIM(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
@@ -385,15 +409,18 @@ class DifferentialDivergenceLoss(nn.Module):
         #true_diff = true_diff.reshape(true_diff.shape[0], true_diff.shape[1], -1)
         #pred_prob = F.softmax(pred_diff / self.tau, dim=2)
         #true_prob = F.softmax(true_diff / self.tau, dim=2)
-        reg_mse = mse_loss#F.mse_loss(pred_diff, true_diff)
-        #reg_std = F.mse_loss(torch.std(pred_diff, dim=1), torch.std(true_diff,dim=1))
+
+        reg_mse = torch.mean(F.mse_loss(pred_diff, true_diff, reduction='none') * static_ch[:, :, :, :, :])
+        reg_std = F.mse_loss(torch.std(pred_diff, dim=1), torch.std(true_diff,dim=1), reduction='none')
+        reg_std = torch.mean(reg_std * static_ch[:, 0, :, :, :])
+
 
         # get KL between pred_prob and true_prob
         #sum_loss = torch.sum(true_prob * torch.log(true_prob / pred_prob), dim=1).mean()
 
         #sum_loss = self.main_loss(pred_prob, true_prob)
 
-        train_loss = self.w1 * mse_loss + self.w2 * reg_mse + self.w3 * reg_std + self.w4 * std_loss + self.w5*sum_loss
+        train_loss = self.w1 * (mse_loss) + self.w2 * (reg_mse) + self.w3 * (reg_std) + self.w4 * std_loss + self.w5*sum_loss
         # check if train loss is nan
         if torch.any(torch.isnan(train_loss)):
             pdb.set_trace()
