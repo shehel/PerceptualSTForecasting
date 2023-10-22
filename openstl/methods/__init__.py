@@ -16,6 +16,7 @@ from .tau import TAU
 from .dmvfn import DMVFN
 from .simvprnn import SimVPRnn
 from .simvpresid import SimVPResid
+from .unetresid import UNetResid   
 
 method_maps = {
     'convlstm': ConvLSTM,
@@ -34,10 +35,11 @@ method_maps = {
     'dmvfn': DMVFN,
     'simvprnn': SimVPRnn,
     'simvpresid': SimVPResid,
+    'unetresid': UNetResid
 }
 
 __all__ = [
     'method_maps', 'ConvLSTM', 'CrevNet', 'E3DLSTM', 'MAU', 'MIM',
     'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'PredNet', 'SimVP', 'UNet' 
-    'TAU', 'SimVPRnn', 'SimVPResid'
+    'TAU', 'SimVPRnn', 'SimVPResid', 'UNetResid'
 ]

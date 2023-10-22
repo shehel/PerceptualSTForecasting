@@ -349,6 +349,47 @@ class DilateLoss(nn.Module):
         sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch, pixels=50)
         return dilate_loss(sampled_pred, sampled_true, self.alpha, self.gamma, self.device)[0]
 
+class QuantileRegressionLoss(nn.Module):
+    def __init__(self, params):
+        super(QuantileRegressionLoss, self).__init__()
+
+        self.q_lo_loss = PinballLoss(quantile=params["q_lo"])
+        self.q_hi_loss = PinballLoss(quantile=params["q_hi"])
+        self.mse_loss = nn.MSELoss()
+
+        self.q_lo_weight = params['q_lo_weight']
+        self.q_hi_weight = params['q_hi_weight']
+        self.mse_weight = params['mse_weight']
+
+    def forward(self, pred, target, static_ch, std_ch):
+        loss = self.q_lo_weight * self.q_lo_loss(pred[:,0,:,:,:].squeeze(), target.squeeze(), static_ch, std_ch) + \
+               self.q_hi_weight * self.q_hi_loss(pred[:,2,:,:,:].squeeze(), target.squeeze(), static_ch, std_ch) + \
+               self.mse_weight * self.mse_loss(pred[:,1,:,:,:].squeeze(), target.squeeze())
+        return loss
+
+class PinballLoss():
+
+  def __init__(self, quantile=0.10, reduction='mean'):
+      self.quantile = quantile
+      assert 0 < self.quantile
+      assert self.quantile < 1
+      self.reduction = reduction
+
+  def __call__(self, output, target, static_ch, std_ch):
+      assert output.shape == target.shape
+      loss = torch.zeros_like(target, dtype=torch.float)
+      error = static_ch*std_ch*(output - target)
+      smaller_index = error < 0
+      bigger_index = 0 < error
+      loss[smaller_index] = self.quantile * (abs(error)[smaller_index])
+      loss[bigger_index] = (1-self.quantile) * (abs(error)[bigger_index])
+
+      if self.reduction == 'sum':
+        loss = loss.sum()
+      if self.reduction == 'mean':
+        loss = loss.mean()
+
+      return loss
 class DifferentialDivergenceLoss(nn.Module):
     def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.000001):
         super(DifferentialDivergenceLoss, self).__init__()
@@ -358,8 +399,12 @@ class DifferentialDivergenceLoss(nn.Module):
         #self.main_loss = nn.L1Loss()
         self.main_loss = nn.MSELoss()
         #self.ssim = SSIM(window_size=4)
-
+        self.q_loss = QuantileRegressionLoss(params={"q_lo": 0.1, "q_hi": 0.9, "q_lo_weight": 1, "q_hi_weight": 1, "mse_weight": 1})
     def forward(self, pred, true, static_ch):
+        true_std = torch.std(true, dim=1, keepdim=False)
+        true_std = true_std/(torch.max(true_std)+self.epsilon)
+        mse_loss = self.q_loss(pred, true, static_ch[:,0], true_std)
+        pred = pred[:,1,:,:,:]
         # mae loss using functional
         #std_loss = self.ssim(pred, true)
         #mse_loss = dilate_loss(pred[:,:,0,64:65,64], true[:,:,0,64:65,64], alpha=0.1, gamma=0.001, device=pred.device)[0]
@@ -368,7 +413,7 @@ class DifferentialDivergenceLoss(nn.Module):
         # binatrize static_ch
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
         #mse_loss, reg_mse, reg_std = self.main_loss(pred[:,:,]*static_ch, true[:,:]*static_ch)
-        _, std_loss, mse_loss = ssim3D(pred, true, static_ch=static_ch)
+        #_, std_loss, _ = ssim3D(pred, true, static_ch=static_ch)
         #mse_loss = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)[0]
         #reg_std = self.main_loss(pred*static_ch, true*static_ch)
         # pred = pred * static_ch
@@ -385,7 +430,7 @@ class DifferentialDivergenceLoss(nn.Module):
         sum_loss = self.main_loss(true_ratios,predicted_ratios)
         #pred = pred * static_ch
         #true = true * static_ch
-        # mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
+        #mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
 
         #pred_prob = F.softmax(sum_1, dim=1)
         #true_prob = F.softmax(sum_2, dim=1)
@@ -393,8 +438,8 @@ class DifferentialDivergenceLoss(nn.Module):
         # do kl div loss on pred_prob and true_prob using F.kl_div
         #sum_loss = F.kl_div(torch.log(pred_prob + self.epsilon), true_prob, reduction='batchmean')
 
-        # std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
-        # std_loss = torch.mean(std_loss * static_ch[:,0])
+        std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
+        std_loss = torch.mean(std_loss * static_ch[:,0])
         #sum_loss = std_loss
         #sum_loss = F.mse_loss(torch.sum(pred, dim=1), torch.sum(true,dim=1))
         #reg_std = modified_total_variation_loss(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))

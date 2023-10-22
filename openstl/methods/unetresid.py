@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from timm.utils import AverageMeter
 
-from openstl.models import SimVP_Model, UNet_Model
+from openstl.models import SimVP_Model, UNet_Model, UNetQ_Model
 from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
 from .base_method import Base_method
 from openstl.core.optim_scheduler import get_optim_scheduler
@@ -15,7 +15,7 @@ import pdb
 import math
 
 
-class SimVPResid(Base_method):
+class UNetResid(Base_method):
     r"""SimVP
 
     Implementation of `SimVP: Simpler yet Better Video Prediction
@@ -79,7 +79,7 @@ class SimVPResid(Base_method):
         trend_model.to(self.device) 
         # set trend model to eval mode
         trend_model.eval()
-        resid_model = SimVP_Model(**args).to(self.device)
+        resid_model = UNetQ_Model(**args).to(self.device)
         return resid_model, trend_model
 
     def _predict(self, batch_x, batch_y=None, test=False, **kwargs):

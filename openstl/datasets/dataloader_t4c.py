@@ -190,15 +190,15 @@ class T4CDataset(Dataset):
         #static_ch = inp_mean[4,:,:]
         output_data = output_data[:,0::1,:,:]
         static_ch = static_ch[0, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
-        #static_ch = static_ch/static_ch.max()
+        static_ch = static_ch/static_ch.max()
         #static_ch = np.ones((128,128))
         if self.test:
-            static_ch = np.where(static_ch > 0, 1,0)
-            #a = 1
+            #static_ch = np.where(static_ch > 0, 1,0)
+            a = 1
         else:
             #static_ch = find_largest(inp_mean[4], 1000)
-            static_ch = np.where(static_ch > 0, 1,0)
-            #a = 1
+            #static_ch = np.where(static_ch > 0, 1,0)
+            a = 1
 
 
         static_ch = static_ch[np.newaxis, np.newaxis, :, :]

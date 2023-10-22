@@ -296,7 +296,7 @@ class BaseExperiment(object):
     def display_method_info(self):
         """Plot the basic infomation of supported methods"""
         T, C, H, W = self.args.in_shape
-        if self.args.method in ['simvp', 'unet', 'tau', 'simvpresid']:
+        if self.args.method in ['simvp', 'unet', 'tau', 'simvpresid', 'unetresid']:
             input_dummy = torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device)
         elif self.args.method == 'simvprnn':
             Hp, Wp = 32, 32
@@ -412,7 +412,7 @@ class BaseExperiment(object):
         # subtract results['inputs'] by its temporal mean along first dimension using numpy
         #results['inputs'] = results['inputs'] - np.mean(results['inputs'], axis=1, keepdims=True)
 
-        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis],
+        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,1,:,0,:,:,np.newaxis],
                     results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
@@ -423,7 +423,9 @@ class BaseExperiment(object):
         for i in [10,50,100,150]:
             plt.plot(shifted_x_values,results['inputs'][i,:,0,64,64], label="Inputs")
             plt.plot(x_values,results['trues'][i,:,0,64,64], label="True")
-            plt.plot(x_values, results['preds'][i,:,0,64,64], label="Preds")
+            plt.plot(x_values, results['preds'][i,0,:,0,64,64], label="Preds_l")
+            plt.plot(x_values, results['preds'][i,1,:,0,64,64], label="Preds_m")
+            plt.plot(x_values, results['preds'][i,2,:,0,64,64], label="Preds_h")
             plt.legend()
             fig = plt.gcf()  # Get the current figure
 
@@ -437,7 +439,9 @@ class BaseExperiment(object):
                 )
             plt.close()
         plt.plot(results['trues'][:240,0,0,64,64], label="True")
-        plt.plot(results['preds'][:240,0,0,64,64], label="Preds")
+        plt.plot(results['preds'][:240,0,0,0,64,64], label="Preds_l")
+        plt.plot(results['preds'][:240,1,0,0,64,64], label="Preds_m")
+        plt.plot(results['preds'][:240,2,0,0,64,64], label="Preds_h")
         plt.legend()
         fig = plt.gcf()  # Get the current figure
 
@@ -457,7 +461,7 @@ class BaseExperiment(object):
                 metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
             else:
                 metric_list, spatial_norm = ['mse', 'mae'], False
-            eval_res, eval_log = metric(results["preds"], results["trues"], self.vali_loader.dataset.mean, self.vali_loader.dataset.std,
+            eval_res, eval_log = metric(results["preds"][:,1], results["trues"], self.vali_loader.dataset.mean, self.vali_loader.dataset.std,
                                         metrics=metric_list, spatial_norm=spatial_norm)
 
             print_log('val\t '+eval_log)
