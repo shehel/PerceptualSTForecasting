@@ -11,9 +11,11 @@ Release version to OpenSTL V0.3.0 as [#25](https://github.com/chengtan9907/OpenS
 * Update STL results visualization by [vis_video](https://github.com/chengtan9907/OpenSTL/tree/master/tools/visualizations/vis_video.py) for video prediction, traffic prediction, weather prediction tasks in [video_visualization](https://github.com/chengtan9907/OpenSTL/docs/en/visualization/video_visualization.md), [traffic_visualization](https://github.com/chengtan9907/OpenSTL/docs/en/visualization/traffic_visualization.md), and [weather_visualization](https://github.com/chengtan9907/SimVPv2/docs/en/visualization/weather_visualization.md).
 * Support Jupyter notebook tutorials and video examples in [examples](https://github.com/chengtan9907/OpenSTL/tree/master/examples).
 * Support early-stop training with `--early_stop_epoch` as issue [#36](https://github.com/chengtan9907/OpenSTL/issues/36).
+* Support inference only with `--inference` in `tools/test.py` for issue [#55](https://github.com/chengtan9907/OpenSTL/issues/55), where results will be saved in `ex_name/saved`.
 
 #### Update Documents
 
+* The [OpenSTL](https://arxiv.org/abs/2306.11249) paper has been accepted by NeurIPS 2023 Dataset and Benchmark Track.
 * Release arXiv preprint of [OpenSTL](https://arxiv.org/abs/2306.11249), which describes the overall framework, benchmark results, and experimental settings, etc.
 * Update benchmark results of video prediction, traffic prediction, and weather prediction benchmarks in `docs/en/model_zoos`.
 * Add the Huggingface organization for [OpenSTL🤗](https://huggingface.co/OpenSTL), where users can join it by [invitation link](https://huggingface.co/organizations/OpenSTL/share/ovCzbEGVhnQNFHBGMMLfXEsPhmuqgBZfii).
@@ -22,6 +24,7 @@ Release version to OpenSTL V0.3.0 as [#25](https://github.com/chengtan9907/OpenS
 
 * Fix bugs in the dataloader (issue [#26](https://github.com/chengtan9907/OpenSTL/issues/26)) and dataset prepration tools (issue [#27](https://github.com/chengtan9907/OpenSTL/issues/27) and [#28](https://github.com/chengtan9907/OpenSTL/issues/28)).
 * Fix bugs of overwrite config values during training, where `utils/main_utils/update_config` will overwrite the config file with the default values in `utils/main_utils/parser` in mistake (issue [#42](https://github.com/chengtan9907/OpenSTL/issues/42)). Using `default_parser()` to provide the default values and fulfill the config after updating values in the given config file (solving pull request [#47](https://github.com/chengtan9907/OpenSTL/pull/47)).
+* Fix bugs of env installation (issue [#62](https://github.com/chengtan9907/OpenSTL/issues/62)) and update `environment.yml`.
 
 ### v0.2.0 (21/04/2023)
 

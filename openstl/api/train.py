@@ -84,7 +84,8 @@ class BaseExperiment(object):
         self._preparation(dataloaders)
         if self._rank == 0:
             print_log(output_namespace(self.args))
-            self.display_method_info()
+            if not self.args.no_display_method_info:
+                self.display_method_info()
 
     def _acquire_device(self):
         """Setup devices"""
@@ -154,13 +155,13 @@ class BaseExperiment(object):
             with open(sv_param, 'w') as file_obj:
                 json.dump(self.args.__dict__, file_obj)
 
-        for handler in logging.root.handlers[:]:
-            logging.root.removeHandler(handler)
-        timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
-        prefix = 'train' if not self.args.test else 'test'
-        logging.basicConfig(level=logging.INFO,
-                            filename=osp.join(self.path, '{}_{}.log'.format(prefix, timestamp)),
-                            filemode='a', format='%(asctime)s - %(message)s')
+            for handler in logging.root.handlers[:]:
+                logging.root.removeHandler(handler)
+            timestamp = time.strftime('%Y%m%d_%H%M%S', time.localtime())
+            prefix = 'train' if (not self.args.test and not self.args.inference) else 'test'
+            logging.basicConfig(level=logging.INFO,
+                                filename=osp.join(self.path, '{}_{}.log'.format(prefix, timestamp)),
+                                filemode='a', format='%(asctime)s - %(message)s')
 
         # log env info
         env_info_dict = collect_env()
@@ -524,52 +525,19 @@ class BaseExperiment(object):
 
         return eval_res['mse']
 
-
-    def get_grads(self):
-        """A testing loop of STL methods"""
-        if self.args.test:
-            best_model_path = osp.join(self.path, 'checkpoint.pth')
-            #best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
-            self._load_from_state_dict(torch.load(best_model_path))
-            #self._load(best_model_path)
-
+    def inference(self):
+        """A inference loop of STL methods"""
+        best_model_path = osp.join(self.path, 'checkpoint.pth')
+        self._load_from_state_dict(torch.load(best_model_path))
 
         self.call_hook('before_val_epoch')
-        results = self.method.grads_one_epoch(self, self.test_loader)
+        results = self.method.test_one_epoch(self, self.test_loader)
         self.call_hook('after_val_epoch')
 
-        # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
-        
-        
-        # TODO Fix inp_mean calculation since adding by results will make it expand dims
-
-        #inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
-        #results["preds"] = ((results["preds"] + inp_mean)*self.train_loader.dataset.s)+self.train_loader.dataset.m
-        #trues = trues[:,:,0::2]
-        #preds = preds[:,:,0::2]
-        #trues = trues[:,:,2:3]#, 62-10,92-40]
-
-        if 'weather' in self.args.dataname:
-            metric_list, spatial_norm = self.args.metrics, True
-            channel_names = self.test_loader.dataset.data_name if 'mv' in self.args.dataname else None
-        else:
-            metric_list, spatial_norm, channel_names = self.args.metrics, False, None
-        eval_res, eval_log = metric(results['preds'], results['trues'],
-                                    self.test_loader.dataset.mean, self.test_loader.dataset.std,
-                                    metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
-        results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
-
         if self._rank == 0:
-            print_log(eval_log)
-            folder_path = osp.join(self.path, 'saved_comb1')
-            print ("Saving to ", folder_path)
+            folder_path = osp.join(self.path, 'saved')
             check_dir(folder_path)
+            for np_data in ['inputs', 'trues', 'preds']:
+                np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 
-            if self.args.ex_name.endswith('unet'):
-                for np_data in ['metrics', 'inputs', 'trues', 'preds']:
-                    np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
-            else:
-                for np_data in ['metrics', 'trues', 'inputs', 'preds']:
-                    np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
-
-        return eval_res['mse']
+        return None

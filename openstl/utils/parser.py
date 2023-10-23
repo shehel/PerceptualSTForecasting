@@ -35,6 +35,7 @@ def create_parser():
     parser.add_argument('--auto_resume', action='store_true', default=False,
                         help='When training was interupted, resume from the latest checkpoint')
     parser.add_argument('--test', action='store_true', default=False, help='Only performs testing')
+    parser.add_argument('--inference', '-i', action='store_true', default=False, help='Only performs inference')
     parser.add_argument('--deterministic', action='store_true', default=False,
                         help='whether to set deterministic options for CUDNN backend (reproducable)')
     parser.add_argument('--launcher', default='none', type=str,
@@ -95,6 +96,8 @@ def create_parser():
                         help='Gradient clipping mode. One of ("norm", "value", "agc")')
     parser.add_argument('--early_stop_epoch', default=-1, type=int,
                         help='Check to early stop after this epoch')
+    parser.add_argument('--no_display_method_info', action='store_true', default=False,
+                        help='Do not display method info')
 
     # Training parameters (scheduler)
     parser.add_argument('--sched', default=None, type=str, metavar='SCHEDULER',
@@ -140,6 +143,7 @@ def default_parser():
         'resume_from': None,
         'auto_resume': False,
         'test': False,
+        'inference': False,
         'deterministic': False,
         'launcher': 'pytorch',
         'local_rank': 0,
@@ -173,6 +177,8 @@ def default_parser():
         'weight_decay': 0,
         'clip_grad': None,
         'clip_mode': 'norm',
+        'early_stop_epoch': -1,
+        'no_display_method_info': False,
         # Training parameters (scheduler)
         'sched': 'onecycle',
         'lr': 1e-3,
