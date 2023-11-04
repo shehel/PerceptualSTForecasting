@@ -219,9 +219,9 @@ class Base_method(object):
         for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
             with torch.no_grad():
                 batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y,batch_y, trend = self._predict(batch_x, batch_y)
+                pred_y, trend = self._predict(batch_x, batch_y)
                 #assert pred_y.shape == batch_y.shape
-                assert trend.shape == batch_y.shape
+                #assert trend.shape == batch_y.shape
                 #pred_y = pred_y + trend
                 
                 
@@ -230,7 +230,7 @@ class Base_method(object):
             if gather_data:  # return raw datas
                 results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
                                         [batch_x[:,:,4:5,:,:].cpu().numpy(),
-                                     pred_y[:,:,:,4:5,:,:].cpu().numpy(),
+                                     pred_y[:,:,4:5,:,:].cpu().numpy(),
                                      batch_y[:,:,4:5,:,:].cpu().numpy(),
                                      batch_static.cpu().numpy()])))
             else:  # return metrics

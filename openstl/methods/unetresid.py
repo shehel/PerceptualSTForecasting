@@ -35,7 +35,7 @@ class UNetResid(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.adapt_weights = torch.tensor([1,0,0,0,1])
         n_steps = 100
         y_50 = 0.01
         decay_constant = -math.log(y_50) / 50
@@ -74,7 +74,7 @@ class UNetResid(Base_method):
     def _build_model(self, args):
         trend_model = UNet_Model()
         # load trend model weights from "work_dir/e1_q15_m0_unet_initmod/checkpoint.pth"
-        trend_model.load_state_dict(torch.load("work_dirs/e1_q15_m0_unet_initmod/checkpoint.pth"))
+        # trend_model.load_state_dict(torch.load("work_dirs/e1_q15_m0_unet_initmod/checkpoint.pth"))
         
         trend_model.to(self.device) 
         # set trend model to eval mode
@@ -161,7 +161,7 @@ class UNetResid(Base_method):
                 #encoded_norms = loss
                 pred_y, resid, _ = self._predict(batch_x, batch_y)
                 # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,:,4:5,:,:], resid[:,:,4:5,:,:], batch_static)
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
 
                 self.model.zero_grad()
                 #label.fill_(self.real_label)  # fake labels are real for generator cost
@@ -170,6 +170,7 @@ class UNetResid(Base_method):
                 #self.model_optim.step()
                 #loss = (self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss)
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                #loss = 1-(self.adapt_weights[0] * mse_loss * self.adapt_weights[3] * std_loss * self.adapt_weights[4] * sum_loss)
                 #loss.backward()
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])

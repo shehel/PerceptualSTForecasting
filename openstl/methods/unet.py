@@ -30,7 +30,7 @@ class UNet(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=1.5)
         self.iters_to_make_updates = 100
-        self.adapt_weights = torch.tensor([0,0,1,0,0])
+        self.adapt_weights = torch.tensor([1,0,0,0,0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []

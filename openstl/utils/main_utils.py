@@ -152,18 +152,18 @@ def _ssim_3D(img1, img2, window, window_size, channel, size_average=True, static
     C2 = 0.03 ** 2
     C3 = C2/2
     #ssim_map = ((2 * mu1_mu2 + C1) * (2 * sigma12 + C2)) / ((mu1_sq + mu2_sq + C1) * (sigma1_sq + sigma2_sq + C2))
-    #ssim_map_1 = (2 * mu1_mu2 + C1)/(mu1_sq + mu2_sq + C1)
-    #ssim_map_2 = ((2 * torch.sqrt(sigma1_sq+1e-8) * torch.sqrt(sigma2_sq+1e-8)) + C2)/(sigma1_sq + sigma2_sq + C2)
-    #ssim_map_3 = (sigma12 + C3)/((torch.sqrt(sigma1_sq+1e-8) * torch.sqrt(sigma2_sq+1e-8)) + C3)
+    ssim_map_1 = (2 * mu1_mu2 + C1)/(mu1_sq + mu2_sq + C1)
+    ssim_map_2 = ((2 * torch.sqrt(sigma1_sq) * torch.sqrt(sigma2_sq)) + C2)/(sigma1_sq + sigma2_sq + C2)
+    ssim_map_3 = (sigma12 + C3)/((torch.sqrt(sigma1_sq) * torch.sqrt(sigma2_sq)) + C3)
     # mask each of the components iwth static_ch
     #ssim_map_1 = ssim_map_1 * static_ch
     #ssim_map_2 = ssim_map_2 * static_ch
     #ssim_map_3 = ssim_map_3 * static_ch
     #return #1-ssim_map_1.mean(), 1-ssim_map_2.mean(), 1-ssim_map_3.mean()
-    ssim_map_1 = F.mse_loss(mu1 * static_ch, mu2 * static_ch, reduction='mean')
-    ssim_map_2 = F.mse_loss(torch.sqrt(sigma1_sq) * static_ch, torch.sqrt(sigma2_sq) * static_ch, reduction='mean')
-    ssim_map_3 = F.mse_loss(img1 * static_ch, img2 * static_ch, reduction='mean')
-    return ssim_map_1, ssim_map_2, ssim_map_3
+    # ssim_map_1 = F.mse_loss(mu1, mu2, reduction='mean')
+    # ssim_map_2 = F.mse_loss(torch.sqrt(sigma1_sq) * static_ch, torch.sqrt(sigma2_sq) * static_ch, reduction='mean')
+    # ssim_map_3 = F.mse_loss(img1, img2, reduction='mean')
+    return ssim_map_1.mean(), ssim_map_2.mean(), ssim_map_3.mean()
 
 
 def ssim3D(img1, img2, window_size=5, size_average=True, static_ch = None):
@@ -189,7 +189,7 @@ def normalize_image(image, range_min, range_max):
     # Normalize the image pixel values to the range [0, 1]
     return (image - range_min) / (range_max - range_min)
 
-def mse_of_spatial_std(input_tensor, target_tensor, kernel_size=3, epsilon=1e-8):
+def mse_of_spatial_std(input_tensor, target_tensor, static_ch, kernel_size=5, epsilon=1e-8):
     # Check if both input and target tensor have the same dimensions
     assert input_tensor.shape == target_tensor.shape
 
@@ -207,10 +207,11 @@ def mse_of_spatial_std(input_tensor, target_tensor, kernel_size=3, epsilon=1e-8)
     std_target = torch.sqrt(var_target + epsilon)
 
     # Step 4: Compute the MSE of standard deviations
-    mse_loss = F.mse_loss(std_input, std_target)
+    mse_loss = F.mse_loss(std_input, std_target, reduction='none')
+    mse_loss = torch.mean(mse_loss*static_ch[:,0])
     return mse_loss
 
-def mse_of_spatial_cov(input_tensor, target_tensor, kernel_size=7, epsilon=1e-8):
+def mse_of_spatial_cov(input_tensor, target_tensor, kernel_size=5, epsilon=1e-8):
     # Check if both input and target tensor have the same dimensions
     assert input_tensor.shape == target_tensor.shape
 
@@ -302,9 +303,9 @@ def dilate_loss(outputs, targets, alpha, gamma, device):
 	return loss, loss_shape, loss_temporal
 
 # Modified function to return output of shape (500, 5, 1)
-def sample_top_pixels_modified(true, pred, mask, pixels=50):
+def sample_top_pixels_modified(true, pred, mask):
     """
-    Samples the top 50 highest height, width pixels based on mask values from true and pred tensors.
+    Samples 50 pixels from the top 200 highest height, width pixels based on mask values from true and pred tensors.
     
     Parameters:
     - true (torch.Tensor): The ground truth tensor of shape (batch_size, timestep, 1, height, width).
@@ -319,23 +320,27 @@ def sample_top_pixels_modified(true, pred, mask, pixels=50):
     # Step 1: Flatten the mask to (batch_size, height * width)
     mask_flattened = mask.view(mask.size(0), -1)
     
-    # Step 2: Sort the flattened mask and get top 50 indices
-    _, top_indices = torch.topk(mask_flattened, pixels, dim=-1)
+    # Step 2: Sort the flattened mask and get top 200 indices
+    _, top_indices = torch.topk(mask_flattened, 500, dim=-1)
     
-    # Step 3: Gather the data corresponding to top 50 indices
-    top_indices_expanded = top_indices.unsqueeze(1).unsqueeze(2).expand(-1, true.size(1), -1, -1)
+    # Step 3: Sample 50 indices from the top 200 indices for each batch
+    sampled_indices = top_indices[:, torch.randperm(200)[:50]]
+    
+    # Step 4: Gather the data corresponding to sampled indices
+    sampled_indices_expanded = sampled_indices.unsqueeze(1).unsqueeze(2).expand(-1, true.size(1), -1, -1)
     
     true_flattened = true.view(true.size(0), true.size(1), 1, true.size(3) * true.size(4))
     pred_flattened = pred.view(pred.size(0), pred.size(1), 1, pred.size(3) * pred.size(4))
     
-    gathered_true = torch.gather(true_flattened, -1, top_indices_expanded)
-    gathered_pred = torch.gather(pred_flattened, -1, top_indices_expanded)
+    sampled_true = torch.gather(true_flattened, -1, sampled_indices_expanded)
+    sampled_pred = torch.gather(pred_flattened, -1, sampled_indices_expanded)
     
-    # Step 4: Reshape to (batch_size * 50, timestep, 1)
-    sampled_true = gathered_true.view(-1, true.size(1), 1)
-    sampled_pred = gathered_pred.view(-1, pred.size(1), 1)
+    # Step 5: Reshape to (batch_size * 50, timestep, 1)
+    sampled_true = sampled_true.view(-1, true.size(1), 1)
+    sampled_pred = sampled_pred.view(-1, pred.size(1), 1)
     
     return sampled_true, sampled_pred
+
 
 
 class DilateLoss(nn.Module):
@@ -378,11 +383,11 @@ class PinballLoss():
   def __call__(self, output, target, static_ch, std_ch):
       assert output.shape == target.shape
       loss = torch.zeros_like(target, dtype=torch.float)
-      error = static_ch*std_ch*(output - target)
+      error = (output - target)
       smaller_index = error < 0
       bigger_index = 0 < error
-      loss[smaller_index] = self.quantile * (abs(error)[smaller_index])
-      loss[bigger_index] = (1-self.quantile) * (abs(error)[bigger_index])
+      loss[smaller_index] = self.quantile * ((abs(error))[smaller_index])
+      loss[bigger_index] = (1-self.quantile) * ((abs(error))[bigger_index])
 
       if self.reduction == 'sum':
         loss = loss.sum()
@@ -391,7 +396,7 @@ class PinballLoss():
 
       return loss
 class DifferentialDivergenceLoss(nn.Module):
-    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.000001):
+    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.00001):
         super(DifferentialDivergenceLoss, self).__init__()
         self.tau = tau
         self.epsilon = epsilon
@@ -399,22 +404,23 @@ class DifferentialDivergenceLoss(nn.Module):
         #self.main_loss = nn.L1Loss()
         self.main_loss = nn.MSELoss()
         #self.ssim = SSIM(window_size=4)
-        self.q_loss = QuantileRegressionLoss(params={"q_lo": 0.1, "q_hi": 0.9, "q_lo_weight": 1, "q_hi_weight": 1, "mse_weight": 1})
+        self.q_loss = QuantileRegressionLoss(params={"q_lo": 0.05, "q_hi": 0.95, "q_lo_weight": 1, "q_hi_weight": 1, "mse_weight": 1})
     def forward(self, pred, true, static_ch):
-        true_std = torch.std(true, dim=1, keepdim=False)
-        true_std = true_std/(torch.max(true_std)+self.epsilon)
-        mse_loss = self.q_loss(pred, true, static_ch[:,0], true_std)
-        pred = pred[:,1,:,:,:]
+        #true_std = torch.std(true, dim=1, keepdim=False)
+        #true_std = true_std/((torch.max(true_std)+self.epsilon))
+        #mse_loss = self.q_loss(pred, true, static_ch[:,0], true_std)
+        #pred = pred[:,1,:,:,:]
         # mae loss using functional
         #std_loss = self.ssim(pred, true)
         #mse_loss = dilate_loss(pred[:,:,0,64:65,64], true[:,:,0,64:65,64], alpha=0.1, gamma=0.001, device=pred.device)[0]
         #mse_loss = 1- ssim3D(pred, true, static_ch=static_ch)
-        #sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch, pixels=25)
+        sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch)
         # binatrize static_ch
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
         #mse_loss, reg_mse, reg_std = self.main_loss(pred[:,:,]*static_ch, true[:,:]*static_ch)
-        #_, std_loss, _ = ssim3D(pred, true, static_ch=static_ch)
-        #mse_loss = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)[0]
+        #sum_loss, std_loss, mse_loss = ssim3D(pred, true, static_ch=static_ch)
+        #sum_loss = mse_of_spatial_std(pred[:,:,0], true[:,:,0], static_ch)
+        sum_loss = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)[0]
         #reg_std = self.main_loss(pred*static_ch, true*static_ch)
         # pred = pred * static_ch
         # true = true * static_ch
@@ -425,13 +431,13 @@ class DifferentialDivergenceLoss(nn.Module):
         # sum_1 = row_standardization(sum_1)
         # sum_2 = row_standardization(sum_2)
         # sum_loss = self.main_loss(sum_1, sum_2)
-        true_ratios = calculate_ratios(true)
-        predicted_ratios = calculate_ratios(pred)
-        sum_loss = self.main_loss(true_ratios,predicted_ratios)
+        #true_ratios = calculate_ratios(true)
+        #predicted_ratios = calculate_ratios(pred)
+        #sum_loss = self.main_loss(true_ratios,predicted_ratios)
         #pred = pred * static_ch
         #true = true * static_ch
-        #mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
-
+        mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
+        #sum_loss = mse_loss
         #pred_prob = F.softmax(sum_1, dim=1)
         #true_prob = F.softmax(sum_2, dim=1)
 

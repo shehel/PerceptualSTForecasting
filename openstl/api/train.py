@@ -131,14 +131,14 @@ class BaseExperiment(object):
         base_dir = self.args.res_dir if self.args.res_dir is not None else 'work_dirs'
         try:
             task = Task.get_task(task_id=self.args.ex_name)
-            model_path = task.artifacts['best_model_weights'].get_local_copy()
-            #model_path = task.artifacts['latest_model_weights'].get_local_copy()
+            #model_path = task.artifacts['best_model_weights'].get_local_copy()
+            model_path = task.artifacts['latest_model_weights'].get_local_copy()
             # copy the model at location self.path to ./work_dirs/task.name
             # but make the dir before if it doesnt exist
             if not os.path.exists(f"{base_dir}/{task.name}"):
                 os.makedirs(f"{base_dir}/{task.name}/checkpoints")
-            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
-            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
+            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
+            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
             self.args.ex_name = task.name
         except:
             print ("Not a clearml task. Using local directory")
@@ -297,7 +297,7 @@ class BaseExperiment(object):
     def display_method_info(self):
         """Plot the basic infomation of supported methods"""
         T, C, H, W = self.args.in_shape
-        if self.args.method in ['simvp', 'unet', 'tau', 'simvpresid', 'unetresid']:
+        if self.args.method in ['simvp', 'unet', 'tau', 'simvpresid', 'unetresid', 'simvpgan']:
             input_dummy = torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device)
         elif self.args.method == 'simvprnn':
             Hp, Wp = 32, 32
@@ -413,7 +413,7 @@ class BaseExperiment(object):
         # subtract results['inputs'] by its temporal mean along first dimension using numpy
         #results['inputs'] = results['inputs'] - np.mean(results['inputs'], axis=1, keepdims=True)
 
-        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,1,:,0,:,:,np.newaxis],
+        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis],
                     results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
@@ -424,9 +424,9 @@ class BaseExperiment(object):
         for i in [10,50,100,150]:
             plt.plot(shifted_x_values,results['inputs'][i,:,0,64,64], label="Inputs")
             plt.plot(x_values,results['trues'][i,:,0,64,64], label="True")
-            plt.plot(x_values, results['preds'][i,0,:,0,64,64], label="Preds_l")
-            plt.plot(x_values, results['preds'][i,1,:,0,64,64], label="Preds_m")
-            plt.plot(x_values, results['preds'][i,2,:,0,64,64], label="Preds_h")
+            #plt.plot(x_values, results['preds'][i,0,:,0,64,64], label="Preds_l")
+            plt.plot(x_values, results['preds'][i,:,0,64,64], label="Preds_m")
+            #plt.plot(x_values, results['preds'][i,2,:,0,64,64], label="Preds_h")
             plt.legend()
             fig = plt.gcf()  # Get the current figure
 
@@ -440,9 +440,9 @@ class BaseExperiment(object):
                 )
             plt.close()
         plt.plot(results['trues'][:240,0,0,64,64], label="True")
-        plt.plot(results['preds'][:240,0,0,0,64,64], label="Preds_l")
-        plt.plot(results['preds'][:240,1,0,0,64,64], label="Preds_m")
-        plt.plot(results['preds'][:240,2,0,0,64,64], label="Preds_h")
+        #plt.plot(results['preds'][:240,0,0,0,64,64], label="Preds_l")
+        plt.plot(results['preds'][:240,0,0,64,64], label="Preds_m")
+        #plt.plot(results['preds'][:240,2,0,0,64,64], label="Preds_h")
         plt.legend()
         fig = plt.gcf()  # Get the current figure
 
@@ -462,7 +462,7 @@ class BaseExperiment(object):
                 metric_list, spatial_norm = ['mse', 'rmse', 'mae'], True
             else:
                 metric_list, spatial_norm = ['mse', 'mae'], False
-            eval_res, eval_log = metric(results["preds"][:,1], results["trues"], self.vali_loader.dataset.mean, self.vali_loader.dataset.std,
+            eval_res, eval_log = metric(results["preds"][:], results["trues"], self.vali_loader.dataset.mean, self.vali_loader.dataset.std,
                                         metrics=metric_list, spatial_norm=spatial_norm)
 
             print_log('val\t '+eval_log)
@@ -525,14 +525,28 @@ class BaseExperiment(object):
 
         return eval_res['mse']
 
-    def inference(self):
+    def inference(self, best_model=True):
         """A inference loop of STL methods"""
-        best_model_path = osp.join(self.path, 'checkpoint.pth')
-        self._load_from_state_dict(torch.load(best_model_path))
+        if best_model:
+            best_model_path = osp.join(self.path, 'checkpoint.pth')
+            self._load_from_state_dict(torch.load(best_model_path))
+        else:
+            best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
+            self._load(best_model_path)
+        print ("loaded from ", best_model_path)
 
         self.call_hook('before_val_epoch')
         results = self.method.test_one_epoch(self, self.test_loader)
+        
         self.call_hook('after_val_epoch')
+        inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
+        results["trues"] = (results["trues"]+inp_mean)
+        results["preds"] = (results["preds"]+np.expand_dims(inp_mean, axis=1))
+        results["inputs"] = (results["inputs"]).astype(np.uint8)
+
+        # clamp trues and preds to be between 0 and 255 and convert to uint8
+        results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)
+        results["preds"] = np.clip(results["preds"], 0, 255).astype(np.uint8)
 
         if self._rank == 0:
             folder_path = osp.join(self.path, 'saved')
@@ -541,3 +555,4 @@ class BaseExperiment(object):
                 np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 
         return None
+

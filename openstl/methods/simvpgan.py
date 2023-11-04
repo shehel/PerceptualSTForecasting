@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from timm.utils import AverageMeter
 
-from openstl.models import SimVP_Model, UNet_Model
+from openstl.models import SimVP_Model, SimVPGAN_Model
 from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
 from .base_method import Base_method
 from openstl.core.optim_scheduler import get_optim_scheduler
@@ -15,7 +15,7 @@ import pdb
 import math
 
 
-class SimVPResid(Base_method):
+class SimVPGAN(Base_method):
     r"""SimVP
 
     Implementation of `SimVP: Simpler yet Better Video Prediction
@@ -26,16 +26,17 @@ class SimVPResid(Base_method):
     def __init__(self, args, device, steps_per_epoch):
         Base_method.__init__(self, args, device, steps_per_epoch)
         self.model, self.d_model = self._build_model(self.config)
-        self.model_optim, self.scheduler, self.by_epoch= self._init_optimizer(steps_per_epoch)
+        self.model_optim, self.scheduler, self.by_epoch, self.dmodel_optim, self.d_scheduler, self.d_epoch = self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
         self.criterion = DifferentialDivergenceLoss()
+        self.BCE_loss = nn.BCEWithLogitsLoss()
         # set 1 to be a torch.tensor and move it to gpu
         self.real_label = torch.tensor(1.).to(self.device)
         self.fake_label = torch.tensor(0.).to(self.device)
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,0,0,1,0])
+        self.adapt_weights = torch.tensor([1,0,0,0,0])
         n_steps = 100
         y_50 = 0.01
         decay_constant = -math.log(y_50) / 50
@@ -49,7 +50,12 @@ class SimVPResid(Base_method):
         self.component_4 = []
         self.component_5 = []
         self.iter = 0
+        # create a list of numbers linearly exponentially decreasing from 1 to 0 in 100 steps
+        #fun = pysdtw.distance.pairwise_l2_squared
 
+# create the SoftDTW distance function
+        #self.criterion = pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=True)
+        #self.criterion_cpu =  pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=False)
     def get_target_tensor(self, prediction, target_is_real):
         """Create label tensors with the same size as the input.
 
@@ -70,32 +76,15 @@ class SimVPResid(Base_method):
     def _init_optimizer(self, steps_per_epoch):
         opt_gen, sched_gen, epoch_gen = get_optim_scheduler(
             self.args, self.args.epoch, self.model, steps_per_epoch)
-        return opt_gen, sched_gen, epoch_gen
+        opt_dis, sched_dis, epoch_dis = get_optim_scheduler(self.args, self.args.epoch, self.d_model, steps_per_epoch)
+        return opt_gen, sched_gen, epoch_gen, opt_dis, sched_dis, epoch_dis
     def _build_model(self, args):
-        trend_model = UNet_Model()
-        # load trend model weights from "work_dir/e1_q15_m0_unet_initmod/checkpoint.pth"
-        trend_model.load_state_dict(torch.load("work_dirs/e1_q15_m0_unet_initmod/checkpoint.pth"))
-        
-        trend_model.to(self.device) 
-        # set trend model to eval mode
-        trend_model.eval()
-        resid_model = SimVP_Model(**args).to(self.device)
-        return resid_model, trend_model
+        return SimVP_Model(**args).to(self.device), SimVPGAN_Model().to(self.device)
 
-    def _predict(self, batch_x, batch_y=None, test=False, **kwargs):
+    def _predict(self, batch_x, batch_y=None, **kwargs):
         """Forward the model"""
         if self.args.aft_seq_length == self.args.pre_seq_length:
-            # if test==True:
-            #     pdb.set_trace()
-            # without taking grad, run batch_x through self.d_model
-            with torch.no_grad():
-                trend, _ = self.d_model(batch_x)
-            # assert shape of trend is same as shape of batch_y
-            assert trend.shape == batch_y.shape
-            
-            resid = batch_y[:,:] - trend
-            
-            pred_y, _ = self.model(batch_x)
+            pred_y, translated = self.model(batch_x)
         elif self.args.aft_seq_length < self.args.pre_seq_length:
             pred_y, translated = self.model(batch_x)
             pred_y = pred_y[:, :self.args.aft_seq_length]
@@ -114,7 +103,7 @@ class SimVPResid(Base_method):
                 pred_y.append(cur_seq[:, :m])
             
             pred_y = torch.cat(pred_y, dim=1)
-        return pred_y, resid, trend
+        return pred_y, translated
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
@@ -127,7 +116,6 @@ class SimVPResid(Base_method):
         losses_total = AverageMeter()
         losses_sum = AverageMeter()
         self.model.train()
-        self.d_model.eval()
         if self.by_epoch:
             self.scheduler.step(epoch)
         train_pbar = tqdm(train_loader) if self.rank == 0 else train_loader
@@ -137,16 +125,22 @@ class SimVPResid(Base_method):
 
             data_time_m.update(time.time() - end)
             
-           
+            self.d_model.zero_grad()
+            
+            
             self.model_optim.zero_grad()
 
             if not self.args.use_prefetcher:
                 batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
             runner.call_hook('before_train_iter')
 
+            b_size = batch_y.size(0)
             with self.amp_autocast():
-
-
+                output = self.d_model(batch_y).view(-1)
+                label = self.get_target_tensor(output, True)   #torch.full((b_size,), self.real_label, dtype=torch.float, device=self.device)
+                errD_real = self.BCE_loss(output, label)
+                errD_real.backward()
+                D_x = output.mean().item()
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
                 #encoded = self.model.encode(batch_y)
@@ -159,17 +153,32 @@ class SimVPResid(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-                pred_y, resid, _ = self._predict(batch_x, batch_y)
-                # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
-
+                pred_y, translated = self._predict(batch_x)
+                
+                output = self.d_model(pred_y.detach()).view(-1)
+                label = self.get_target_tensor(output, False)
+                #label.fill_(self.fake_label)
+                errD_fake = self.BCE_loss(output, label)
+                errD_fake.backward()
+                D_G_z1 = output.mean().item()
+                errD = errD_real + errD_fake
+                self.dmodel_optim.step()
+                #_, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
                 self.model.zero_grad()
                 #label.fill_(self.real_label)  # fake labels are real for generator cost
                 # Since we just updated D, perform another forward pass of all-fake batch through D
+                output = self.d_model(pred_y).view(-1)
+                label = self.get_target_tensor(output, True)
+                # Calculate G's loss based on this output
+                gen_loss = self.BCE_loss(output, label)
+                # Calculate gradients for G
+                D_G_z2 = output.mean().item()
                 # Update G
                 #self.model_optim.step()
-                #loss = (self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss)
-                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                recon_loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                loss = gen_loss + recon_loss
                 #loss.backward()
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
@@ -240,10 +249,12 @@ class SimVPResid(Base_method):
                 losses_std.update(std_loss.item(), batch_x.size(0))
                 losses_sum.update(sum_loss.item(), batch_x.size(0))
 
+
             if self.dist:
                 losses_m.update(reduce_tensor(loss), batch_x.size(0))
 
             if not self.by_epoch:
+                self.d_scheduler.step()
                 self.scheduler.step()
             runner.call_hook('after_train_iter')
             runner._iter += 1

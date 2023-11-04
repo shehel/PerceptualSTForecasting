@@ -17,6 +17,7 @@ from .dmvfn import DMVFN
 from .simvprnn import SimVPRnn
 from .simvpresid import SimVPResid
 from .unetresid import UNetResid   
+from .simvpgan import SimVPGAN
 
 method_maps = {
     'convlstm': ConvLSTM,
@@ -35,11 +36,12 @@ method_maps = {
     'dmvfn': DMVFN,
     'simvprnn': SimVPRnn,
     'simvpresid': SimVPResid,
-    'unetresid': UNetResid
+    'unetresid': UNetResid,
+    'simvpgan': SimVPGAN
 }
 
 __all__ = [
     'method_maps', 'ConvLSTM', 'CrevNet', 'E3DLSTM', 'MAU', 'MIM',
     'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'PredNet', 'SimVP', 'UNet' 
-    'TAU', 'SimVPRnn', 'SimVPResid', 'UNetResid'
+    'TAU', 'SimVPRnn', 'SimVPResid', 'UNetResid', 'SimVPGAN'
 ]

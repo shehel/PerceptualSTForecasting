@@ -68,9 +68,9 @@ class SimVP_Model(nn.Module):
         encoded = self.hid(z)
         hid = encoded.reshape(B*T, C_, H_, W_)
         Y = self.dec(hid, skip)
-        Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
+        #Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
 
-        #Y = Y.reshape(B, T, C, H, W)
+        Y = Y.reshape(B, T, C, H, W)
         #
 
         # Y = self.dec_sc(hid, skip1)
@@ -193,15 +193,15 @@ class Decoder(nn.Module):
                      act_inplace=act_inplace)
         )
         self.readout = nn.Conv2d(C_hid, C_out, 1)
-        self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
-        self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        #self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        #self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
 
     def forward(self, hid, enc1=None):
         for i in range(0, len(self.dec)-1):
             hid = self.dec[i](hid)
         Y = self.dec[-1](hid + enc1)
-        #Y = self.readout(Y)
-        Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
+        Y = self.readout(Y)
+        #Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
         return Y
 
 
