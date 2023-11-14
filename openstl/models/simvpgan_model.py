@@ -71,7 +71,10 @@ class SimVPGAN_Model(nn.Module):
         B, T, C, height, width = input.shape
         input = input.reshape(B, T*C, height, width)
 
-        return self.main(input)
+        output = self.main(input)
+        #output = torch.sigmoid(output)
+
+        return output
 
 class ActNorm(nn.Module):
     def __init__(self, num_features, logdet=False, affine=True,

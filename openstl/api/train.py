@@ -421,40 +421,61 @@ class BaseExperiment(object):
         x_values = range(len(results['trues'][19, :, 0, 64, 64]))
         shifted_x_values = [x - shift_amount for x in x_values]  # Shift x-values for 'inputs'
 
-        for i in [10,50,100,150]:
-            plt.plot(shifted_x_values,results['inputs'][i,:,0,64,64], label="Inputs")
-            plt.plot(x_values,results['trues'][i,:,0,64,64], label="True")
-            #plt.plot(x_values, results['preds'][i,0,:,0,64,64], label="Preds_l")
-            plt.plot(x_values, results['preds'][i,:,0,64,64], label="Preds_m")
-            #plt.plot(x_values, results['preds'][i,2,:,0,64,64], label="Preds_h")
+        # Define the list of pixel coordinates
+        pixel_list = [(64, 64), (51, 56), (51, 40)]
+
+        # Iterate over each time step for which we want to visualize the data
+        for i in [10, 50, 100, 150]:
+            # Iterate over each pixel coordinate
+            for pixel in pixel_list:
+                y, x = pixel  # Unpack the tuple into x and y coordinates
+
+                # Plot the inputs, true values, and predictions for each pixel
+                plt.plot(shifted_x_values, results['inputs'][i, :, 0, y, x], label=f"Inputs at {pixel}")
+                plt.plot(x_values, results['trues'][i, :, 0, y, x], label=f"True at {pixel}")
+                plt.plot(x_values, results['preds'][i, :, 0, y, x], label=f"Preds_m at {pixel}")
+
+                # Show the legend and get the current figure
+                plt.legend()
+                fig = plt.gcf()  # Get the current figure
+
+                # Log the figure using the logger for the specific pixel and time step
+                logger.report_matplotlib_figure(
+                    f"px_{pixel}_{i}",
+                    "true and pred",
+                    iteration=epoch,
+                    figure=fig,
+                    report_image=True,
+                    report_interactive=True
+                )
+            # After plotting for all pixels at the current time step, close the plot to avoid overlap
+            plt.close()
+
+        # The second part of the visualization seems to be a time series plot for the first pixel.
+        # If similar time series plots are required for all pixels, iterate over the pixel list:
+        for pixel in pixel_list:
+            y, x = pixel  # Unpack the tuple into x and y coordinates
+
+            # Plot the true values and predictions over the specified range for each pixel
+            plt.plot(results['trues'][:240, 0, 0, y, x], label=f"True at {pixel}")
+            plt.plot(results['preds'][:240, 0, 0, y, x], label=f"Preds_m at {pixel}")
+
+            # Show the legend and get the current figure
             plt.legend()
             fig = plt.gcf()  # Get the current figure
 
+            # Log the figure using the logger for the specific pixel
             logger.report_matplotlib_figure(
-                "px_"+str(i),
+                f"px_{pixel}_2",
                 "true and pred",
                 iteration=epoch,
-                figure = fig,
-                report_image = True,
-               report_interactive = True
-                )
-            plt.close()
-        plt.plot(results['trues'][:240,0,0,64,64], label="True")
-        #plt.plot(results['preds'][:240,0,0,0,64,64], label="Preds_l")
-        plt.plot(results['preds'][:240,0,0,64,64], label="Preds_m")
-        #plt.plot(results['preds'][:240,2,0,0,64,64], label="Preds_h")
-        plt.legend()
-        fig = plt.gcf()  # Get the current figure
-
-        logger.report_matplotlib_figure(
-            "px_2",
-            "true and pred",
-            iteration=epoch,
-            figure = fig,
-            report_image = True,
-            report_interactive = True
+                figure=fig,
+                report_image=True,
+                report_interactive=True
             )
-        plt.close()
+            # After plotting for the current pixel, close the plot to avoid overlap
+            plt.close()
+
         self.call_hook('after_val_epoch')
 
         if self._rank == 0:

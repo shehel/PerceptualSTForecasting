@@ -36,7 +36,7 @@ class SimVPGAN(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.adapt_weights = torch.tensor([10,0,0,10,0])
         n_steps = 100
         y_50 = 0.01
         decay_constant = -math.log(y_50) / 50
@@ -50,6 +50,8 @@ class SimVPGAN(Base_method):
         self.component_4 = []
         self.component_5 = []
         self.iter = 0
+        
+        self.clip_value = 0.01
         # create a list of numbers linearly exponentially decreasing from 1 to 0 in 100 steps
         #fun = pysdtw.distance.pairwise_l2_squared
 
@@ -76,10 +78,15 @@ class SimVPGAN(Base_method):
     def _init_optimizer(self, steps_per_epoch):
         opt_gen, sched_gen, epoch_gen = get_optim_scheduler(
             self.args, self.args.epoch, self.model, steps_per_epoch)
+        self.args.lr = 1e-7
         opt_dis, sched_dis, epoch_dis = get_optim_scheduler(self.args, self.args.epoch, self.d_model, steps_per_epoch)
         return opt_gen, sched_gen, epoch_gen, opt_dis, sched_dis, epoch_dis
     def _build_model(self, args):
-        return SimVP_Model(**args).to(self.device), SimVPGAN_Model().to(self.device)
+        gen_model = SimVP_Model(**args)
+        gen_model.load_state_dict(torch.load("work_dirs/e1_q26_m27_simconvscresid/checkpoint.pth"), strict=False)
+        gen_model.to(self.device),
+        disc = SimVPGAN_Model().to(self.device)
+        return gen_model, disc
 
     def _predict(self, batch_x, batch_y=None, **kwargs):
         """Forward the model"""
@@ -125,59 +132,59 @@ class SimVPGAN(Base_method):
 
             data_time_m.update(time.time() - end)
             
-            self.d_model.zero_grad()
-            
-            
-            self.model_optim.zero_grad()
-
             if not self.args.use_prefetcher:
                 batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
             runner.call_hook('before_train_iter')
 
             b_size = batch_y.size(0)
             with self.amp_autocast():
-                output = self.d_model(batch_y).view(-1)
-                label = self.get_target_tensor(output, True)   #torch.full((b_size,), self.real_label, dtype=torch.float, device=self.device)
-                errD_real = self.BCE_loss(output, label)
-                errD_real.backward()
-                D_x = output.mean().item()
-                # clam pred_y to be between 0 and 255
-                #pred_y = torch.clamp(pred_y, 0, 255)
-                #encoded = self.model.encode(batch_y)
-                #recon = self.model.recon(batch_x)
-                #reg_loss = self.criterion(torch.std(pred_y[:,:,2:3,:,:], dim=1)*batch_static[:,0], torch.std(batch_y[:,:,4:5,:,:], dim=1)*batch_static[:,0])
-                #reg_loss = torch.tensor(0)#self.criterion(translated, encoded)
-                #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
-                #mse_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]], batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
-                #mse_loss = F.mse_loss(pred_y[:,:,2:3,52,76], batch_y[:,:,4:5,52,76])
-                #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
-                #recon_loss = loss
-                #encoded_norms = loss
-                pred_y, translated = self._predict(batch_x)
-                
-                output = self.d_model(pred_y.detach()).view(-1)
-                label = self.get_target_tensor(output, False)
-                #label.fill_(self.fake_label)
-                errD_fake = self.BCE_loss(output, label)
-                errD_fake.backward()
-                D_G_z1 = output.mean().item()
-                errD = errD_real + errD_fake
-                self.dmodel_optim.step()
-                #_, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
-                
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                for _ in range(5):
+                    self.d_model.zero_grad()
+                    real_output = self.d_model(batch_y).view(-1)
+                    #label = self.get_target_tensor(output, True)   #torch.full((b_size,), self.real_label, dtype=torch.float, device=self.device)
+                    #errD_real = self.BCE_loss(output, label)
+                    errD_real = -torch.mean(real_output)
+                    errD_real.backward()
+                    # clam pred_y to be between 0 and 255
+                    #pred_y = torch.clamp(pred_y, 0, 255)
+                    #encoded = self.model.encode(batch_y)
+                    #recon = self.model.recon(batch_x)
+                    #reg_loss = self.criterion(torch.std(pred_y[:,:,2:3,:,:], dim=1)*batch_static[:,0], torch.std(batch_y[:,:,4:5,:,:], dim=1)*batch_static[:,0])
+                    #reg_loss = torch.tensor(0)#self.criterion(translated, encoded)
+                    #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
+                    #mse_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]], batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
+                    #mse_loss = F.mse_loss(pred_y[:,:,2:3,52,76], batch_y[:,:,4:5,52,76])
+                    #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
+                    #recon_loss = loss
+                    #encoded_norms = loss
+                    pred_y, _ = self._predict(batch_x)
+                    
+                    fake_output = self.d_model(pred_y.detach()).view(-1)
+                    #label = self.get_target_tensor(output, False)
+                    #label.fill_(self.fake_label)
+                    #errD_fake = self.BCE_loss(output, label)
+                    errD_fake = torch.mean(fake_output)
+                    errD_fake.backward()
+
+                    errD = errD_real + errD_fake
+                    # Update the discriminator
+                    self.dmodel_optim.step()
+                    #_, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                    for p in self.d_model.parameters():
+                        p.data.clamp_(-self.clip_value, self.clip_value)
+ 
                 self.model.zero_grad()
-                #label.fill_(self.real_label)  # fake labels are real for generator cost
-                # Since we just updated D, perform another forward pass of all-fake batch through D
-                output = self.d_model(pred_y).view(-1)
-                label = self.get_target_tensor(output, True)
-                # Calculate G's loss based on this output
-                gen_loss = self.BCE_loss(output, label)
-                # Calculate gradients for G
-                D_G_z2 = output.mean().item()
-                # Update G
-                #self.model_optim.step()
-                recon_loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+
+                gen_output = self.d_model(pred_y).view(-1)
+                #gen_label = self.get_target_tensor(gen_output, True)
+                #gen_loss = self.BCE_loss(gen_output, gen_label)
+                gen_loss = -torch.mean(gen_output)
+
+                # Calculate the reconstruction loss
+                _, total_loss, mse_loss, reg_mse, reg_std, std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                recon_loss = sum(self.adapt_weights[i] * loss for i, loss in enumerate([mse_loss, reg_mse, reg_std, std_loss, sum_loss]))
+
+                # Combine losses for the generator update
                 loss = gen_loss + recon_loss
                 #loss.backward()
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
@@ -242,12 +249,12 @@ class SimVPGAN(Base_method):
             #loss, total_loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,:,:], batch_y[:,:,4:5,:,:])
             if not self.dist:
                 losses_m.update(loss.item(), batch_x.size(0))
-                losses_total.update(total_loss.item(), batch_x.size(0))
+                losses_total.update(errD.item(), batch_x.size(0))
                 losses_mse_m.update(mse_loss.item(), batch_x.size(0))
                 losses_reg_m.update(reg_mse.item(), batch_x.size(0))
                 losses_reg_s.update(reg_std.item(), batch_x.size(0))
                 losses_std.update(std_loss.item(), batch_x.size(0))
-                losses_sum.update(sum_loss.item(), batch_x.size(0))
+                losses_sum.update(gen_loss.item(), batch_x.size(0))
 
 
             if self.dist:

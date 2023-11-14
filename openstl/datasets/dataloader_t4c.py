@@ -85,6 +85,13 @@ def activate_code(probability):
     rv = bernoulli(probability)
     return rv.rvs() == 1
 
+from datetime import datetime
+# Step 1: Extract day of the week from filenames
+def get_day_of_week(filename):
+    date_str = filename.name.split('_')[0]
+    date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+    return date_obj.strftime("%A")
+
 class T4CDataset(Dataset):
     """Taxibj <https://arxiv.org/abs/1610.00081>`_ Dataset"""
 
@@ -132,11 +139,16 @@ class T4CDataset(Dataset):
         self.len = len(self.file_list) * MAX_TEST_SLOT_INDEX
         static_list = list(Path(self.root_dir).rglob(self.static_filter))
 
-
+        self.weekday_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekday_mean.h5")
+        # float 32
+        self.weekday_mean = self.weekday_mean.astype(np.float32)
+        self.weekend_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekend_mean.h5")
+        self.weekend_mean = self.weekend_mean.astype(np.float32)
         for city in static_list:
              self.static_dict[city.parts[-2]] = load_h5_file(city)
-        for i, file in enumerate(self.file_list):
-             self.file_data.append(load_h5_file(file))
+        # for i, file in enumerate(self.file_list):
+        #      self.file_data.append(load_h5_file(file))
+
 
     def _load_h5_file(self, fn, sl):
         return load_h5_file(fn, sl=sl)
@@ -153,8 +165,15 @@ class T4CDataset(Dataset):
         start_hour = idx % MAX_TEST_SLOT_INDEX
 
         
-        #two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
-        two_hours = self.file_data[file_idx][start_hour:start_hour + self.pre_seq_length * 2 + 1]
+        two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
+        two_hours = two_hours.astype(np.float32)
+        day = get_day_of_week(self.file_list[file_idx])
+        #two_hours = self.file_data[file_idx][start_hour:start_hour + self.pre_seq_length * 2 + 1]
+
+        if day == "Saturday" or day == "Sunday":
+            two_hours = two_hours - self.weekend_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1]
+        else:
+            two_hours = two_hours - self.weekday_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1]
         #two_hours = two_hours
         #two_hours = (two_hours - np.min(two_hours)) * (200 / (np.max(two_hours) - np.min(two_hours)))
         #
@@ -174,13 +193,14 @@ class T4CDataset(Dataset):
 
             # random_int_x = random.randint(0, 300)
             # random_int_y = random.randint(0, 300)
-        two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
-                    random_int_y:random_int_y+128, ]
+        #two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
+        #            random_int_y:random_int_y+128, ]
 
         #two_hours = (two_hours - self.m) / self.s
         #two_hours = two_hours/255
     
         dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
+        
         static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
         #static_ch = static_ch/255
         # get mean of of dynamic input across first axis
@@ -189,7 +209,7 @@ class T4CDataset(Dataset):
         output_data = output_data - inp_mean
         #static_ch = inp_mean[4,:,:]
         output_data = output_data[:,0::1,:,:]
-        static_ch = static_ch[0, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
+        static_ch = static_ch[0]#, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
         static_ch = static_ch/static_ch.sum()
         #static_ch = np.ones((128,128))
         if self.test:
@@ -232,11 +252,11 @@ def train_collate_fn(batch):
 def load_data(batch_size, val_batch_size, data_root,
               num_workers=0, pre_seq_length=None, aft_seq_length=None,
               in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
-
+    num_workers = 0
     try:
         #data_root = Dataset.get(dataset_id="20fef9fe5f0b49319a7f380ae16d5d1e").get_local_copy() # berlin_full
         #data_root = Dataset.get(dataset_id="6ecb9b57d2034556829ebeb9c8a99d63").get_local_copy() # berlin_full
-        data_root = Dataset.get(dataset_id="c44d21c8bc26489185c244f2b39d1baa").get_local_copy()
+        data_root = Dataset.get(dataset_id="75bf6ceb016c4231b03dbc4c11677ee0").get_local_copy()
         #data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")

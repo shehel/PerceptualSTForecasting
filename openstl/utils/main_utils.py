@@ -300,47 +300,39 @@ def dilate_loss(outputs, targets, alpha, gamma, device):
 	Omega =  soft_dtw.pairwise_distances(torch.range(1,N_output).view(N_output,1)).to(device)
 	loss_temporal =  torch.sum( path*Omega ) / (N_output*N_output)
 	loss = alpha*loss_shape+ (1-alpha)*loss_temporal
-	return loss, loss_shape, loss_temporal
-
-# Modified function to return output of shape (500, 5, 1)
-def sample_top_pixels_modified(true, pred, mask):
+	return loss_shape, loss_temporal
+def sample_pixels_efficient(true, pred, fixed_positions):
     """
-    Samples 50 pixels from the top 200 highest height, width pixels based on mask values from true and pred tensors.
-    
+    Efficiently samples pixels at fixed positions from true and pred tensors.
+
     Parameters:
     - true (torch.Tensor): The ground truth tensor of shape (batch_size, timestep, 1, height, width).
     - pred (torch.Tensor): The prediction tensor of shape (batch_size, timestep, 1, height, width).
-    - mask (torch.Tensor): The mask tensor of shape (batch_size, 1, 1, height, width).
-    
-    Returns:
-    - sampled_true (torch.Tensor): Sampled ground truth tensor of shape (batch_size * 50, timestep, 1).
-    - sampled_pred (torch.Tensor): Sampled prediction tensor of shape (batch_size * 50, timestep, 1).
-    """
-    
-    # Step 1: Flatten the mask to (batch_size, height * width)
-    mask_flattened = mask.view(mask.size(0), -1)
-    
-    # Step 2: Sort the flattened mask and get top 200 indices
-    _, top_indices = torch.topk(mask_flattened, 500, dim=-1)
-    
-    # Step 3: Sample 50 indices from the top 200 indices for each batch
-    sampled_indices = top_indices[:, torch.randperm(200)[:50]]
-    
-    # Step 4: Gather the data corresponding to sampled indices
-    sampled_indices_expanded = sampled_indices.unsqueeze(1).unsqueeze(2).expand(-1, true.size(1), -1, -1)
-    
-    true_flattened = true.view(true.size(0), true.size(1), 1, true.size(3) * true.size(4))
-    pred_flattened = pred.view(pred.size(0), pred.size(1), 1, pred.size(3) * pred.size(4))
-    
-    sampled_true = torch.gather(true_flattened, -1, sampled_indices_expanded)
-    sampled_pred = torch.gather(pred_flattened, -1, sampled_indices_expanded)
-    
-    # Step 5: Reshape to (batch_size * 50, timestep, 1)
-    sampled_true = sampled_true.view(-1, true.size(1), 1)
-    sampled_pred = sampled_pred.view(-1, pred.size(1), 1)
-    
-    return sampled_true, sampled_pred
+    - fixed_positions (list of tuples): Fixed positions as a list of (height, width) tuples.
 
+    Returns:
+    - sampled_true (torch.Tensor): Sampled ground truth tensor.
+    - sampled_pred (torch.Tensor): Sampled prediction tensor.
+    """
+
+    batch_size, timesteps, _, height, width = true.size()
+    num_pixels = len(fixed_positions)
+
+    # Initialize the output tensors
+    sampled_true = torch.zeros(batch_size * num_pixels, timesteps, 1, device=true.device)
+    sampled_pred = torch.zeros(batch_size * num_pixels, timesteps, 1, device=pred.device)
+
+    # Gather the data at fixed positions
+    for i, (h, w) in enumerate(fixed_positions):
+        if h >= height or w >= width:
+            raise ValueError("Position out of bounds.")
+
+        indices = torch.arange(batch_size) * num_pixels + i
+        indices = indices.to(true.device)
+        sampled_true.index_copy_(0, indices, true[:, :, 0, h, w].unsqueeze(-1))
+        sampled_pred.index_copy_(0, indices, pred[:, :, 0, h, w].unsqueeze(-1))
+
+    return sampled_true, sampled_pred
 
 
 class DilateLoss(nn.Module):
@@ -396,7 +388,7 @@ class PinballLoss():
 
       return loss
 class DifferentialDivergenceLoss(nn.Module):
-    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.00001):
+    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.0001):
         super(DifferentialDivergenceLoss, self).__init__()
         self.tau = tau
         self.epsilon = epsilon
@@ -405,6 +397,11 @@ class DifferentialDivergenceLoss(nn.Module):
         self.main_loss = nn.MSELoss()
         #self.ssim = SSIM(window_size=4)
         self.q_loss = QuantileRegressionLoss(params={"q_lo": 0.05, "q_hi": 0.95, "q_lo_weight": 1, "q_hi_weight": 1, "mse_weight": 1})
+        self.pixels = [(42, 23), (45, 26), (43, 24), (28, 28), (22, 25), (24, 26), (8, 71), (26, 27), (44, 25), (27, 28), (19, 24), (25, 27), (18, 24), (20, 24), (41, 22), (21, 25), (23, 26), (65, 90), (48, 34), (66, 91), (46, 27), (53, 42), (57, 47), (54, 43), (62, 56), (51, 39), (69, 109), (49, 36), (50, 37), (70, 111), (60, 53), (56, 46), (48, 33), (67, 104), (52, 40), (7, 71), (71, 114), (58, 48), (72, 127), (61, 54), (67, 93), (29, 28), (40, 22), (41, 23), (68, 106), (62, 57), (6, 70), (61, 55), (64, 89)]
+        # Create indices for fixed positions
+        self.pixels = self.pixels[:20]
+        self.pixels = torch.tensor(self.pixels, dtype=torch.long)
+
     def forward(self, pred, true, static_ch):
         #true_std = torch.std(true, dim=1, keepdim=False)
         #true_std = true_std/((torch.max(true_std)+self.epsilon))
@@ -414,13 +411,14 @@ class DifferentialDivergenceLoss(nn.Module):
         #std_loss = self.ssim(pred, true)
         #mse_loss = dilate_loss(pred[:,:,0,64:65,64], true[:,:,0,64:65,64], alpha=0.1, gamma=0.001, device=pred.device)[0]
         #mse_loss = 1- ssim3D(pred, true, static_ch=static_ch)
-        sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch)
+        sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
+        #sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch)
         # binatrize static_ch
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
         #mse_loss, reg_mse, reg_std = self.main_loss(pred[:,:,]*static_ch, true[:,:]*static_ch)
         #sum_loss, std_loss, mse_loss = ssim3D(pred, true, static_ch=static_ch)
         #sum_loss = mse_of_spatial_std(pred[:,:,0], true[:,:,0], static_ch)
-        sum_loss = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)[0]
+        reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
         #reg_std = self.main_loss(pred*static_ch, true*static_ch)
         # pred = pred * static_ch
         # true = true * static_ch
@@ -437,7 +435,7 @@ class DifferentialDivergenceLoss(nn.Module):
         #pred = pred * static_ch
         #true = true * static_ch
         mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
-        #sum_loss = mse_loss
+        sum_loss = mse_loss
         #pred_prob = F.softmax(sum_1, dim=1)
         #true_prob = F.softmax(sum_2, dim=1)
 
@@ -461,9 +459,9 @@ class DifferentialDivergenceLoss(nn.Module):
         #pred_prob = F.softmax(pred_diff / self.tau, dim=2)
         #true_prob = F.softmax(true_diff / self.tau, dim=2)
 
-        reg_mse = torch.mean(F.mse_loss(pred_diff, true_diff, reduction='none') * static_ch[:, :, :, :, :])
-        reg_std = F.mse_loss(torch.std(pred_diff, dim=1), torch.std(true_diff,dim=1), reduction='none')
-        reg_std = torch.mean(reg_std * static_ch[:, 0, :, :, :])
+        # reg_mse = torch.mean(F.mse_loss(pred_diff, true_diff, reduction='none') * static_ch[:, :, :, :, :])
+        # reg_std = F.mse_loss(torch.std(pred_diff, dim=1), torch.std(true_diff,dim=1), reduction='none')
+        # reg_std = torch.mean(reg_std * static_ch[:, 0, :, :, :])
 
 
         # get KL between pred_prob and true_prob
