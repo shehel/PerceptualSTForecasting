@@ -146,8 +146,8 @@ class T4CDataset(Dataset):
         self.weekend_mean = self.weekend_mean.astype(np.float32)
         for city in static_list:
              self.static_dict[city.parts[-2]] = load_h5_file(city)
-        # for i, file in enumerate(self.file_list):
-        #      self.file_data.append(load_h5_file(file))
+        for i, file in enumerate(self.file_list):
+             self.file_data.append(load_h5_file(file).astype(np.float32))
 
 
     def _load_h5_file(self, fn, sl):
@@ -165,10 +165,10 @@ class T4CDataset(Dataset):
         start_hour = idx % MAX_TEST_SLOT_INDEX
 
         
-        two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
-        two_hours = two_hours.astype(np.float32)
+        #two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
+        two_hours = self.file_data[file_idx][start_hour:start_hour + self.pre_seq_length * 2 + 1]
+        #two_hours = two_hours.astype(np.float32)
         day = get_day_of_week(self.file_list[file_idx])
-        #two_hours = self.file_data[file_idx][start_hour:start_hour + self.pre_seq_length * 2 + 1]
 
         if day == "Saturday" or day == "Sunday":
             two_hours = two_hours - self.weekend_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1]
@@ -206,7 +206,7 @@ class T4CDataset(Dataset):
         # get mean of of dynamic input across first axis
         inp_mean = np.mean(dynamic_input, axis=0)
         # remove mean from output data
-        output_data = output_data - inp_mean
+        #output_data = output_data - inp_mean
         #static_ch = inp_mean[4,:,:]
         output_data = output_data[:,0::1,:,:]
         static_ch = static_ch[0]#, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
@@ -252,11 +252,10 @@ def train_collate_fn(batch):
 def load_data(batch_size, val_batch_size, data_root,
               num_workers=0, pre_seq_length=None, aft_seq_length=None,
               in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
-    num_workers = 0
     try:
         #data_root = Dataset.get(dataset_id="20fef9fe5f0b49319a7f380ae16d5d1e").get_local_copy() # berlin_full
         #data_root = Dataset.get(dataset_id="6ecb9b57d2034556829ebeb9c8a99d63").get_local_copy() # berlin_full
-        data_root = Dataset.get(dataset_id="75bf6ceb016c4231b03dbc4c11677ee0").get_local_copy()
+        data_root = Dataset.get(dataset_id="52330a6821ae4a7fbf5b9a2e7402404b").get_local_copy()
         #data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")

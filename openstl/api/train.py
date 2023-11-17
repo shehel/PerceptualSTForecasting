@@ -42,7 +42,7 @@ def get_ani(mat):
     fig, ax = plt.subplots(figsize=(8, 8))
     imgs = []
     for img in mat:
-        img = ax.imshow(img, animated=True, vmax=50, vmin=0)
+        img = ax.imshow(img, animated=True, vmax=40, vmin=0)
         imgs.append([img])
     ani = animation.ArtistAnimation(fig, imgs, interval=1000, blit=True, repeat_delay=3000)
     plt.close()
@@ -418,11 +418,11 @@ class BaseExperiment(object):
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
 
-        x_values = range(len(results['trues'][19, :, 0, 64, 64]))
+        x_values = range(len(results['trues'][19, :, 0, 32, 32]))
         shifted_x_values = [x - shift_amount for x in x_values]  # Shift x-values for 'inputs'
 
         # Define the list of pixel coordinates
-        pixel_list = [(64, 64), (51, 56), (51, 40)]
+        pixel_list = [(32, 32), (19, 24), (19, 12)]
 
         # Iterate over each time step for which we want to visualize the data
         for i in [10, 50, 100, 150]:

@@ -83,7 +83,7 @@ class SimVPGAN(Base_method):
         return opt_gen, sched_gen, epoch_gen, opt_dis, sched_dis, epoch_dis
     def _build_model(self, args):
         gen_model = SimVP_Model(**args)
-        gen_model.load_state_dict(torch.load("work_dirs/e1_q26_m27_simconvscresid/checkpoint.pth"), strict=False)
+        gen_model.load_state_dict(torch.load("work_dirs/e1_q28_m6_simconvsc/checkpoints/latest.pth")['state_dict'], strict=False)
         gen_model.to(self.device),
         disc = SimVPGAN_Model().to(self.device)
         return gen_model, disc
@@ -111,7 +111,17 @@ class SimVPGAN(Base_method):
             
             pred_y = torch.cat(pred_y, dim=1)
         return pred_y, translated
-
+    def compute_gradient_penalty(self, real_data, fake_data):
+        alpha = torch.rand(real_data.size(0), 1, 1, 1, 1).to(self.device)
+        interpolates = (alpha * real_data + ((1 - alpha) * fake_data)).requires_grad_(True)
+        d_interpolates = self.d_model(interpolates).view(-1)
+        fake = torch.ones(d_interpolates.shape).to(self.device)
+        gradients = torch.autograd.grad(
+            outputs=d_interpolates, inputs=interpolates,
+            grad_outputs=fake, create_graph=True, retain_graph=True, only_inputs=True)[0]
+        gradients = gradients.view(gradients.size(0), -1)
+        gradient_penalty = ((gradients.norm(2, dim=1) - 1) ** 2).mean()
+        return gradient_penalty
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
         data_time_m = AverageMeter()
@@ -144,7 +154,7 @@ class SimVPGAN(Base_method):
                     #label = self.get_target_tensor(output, True)   #torch.full((b_size,), self.real_label, dtype=torch.float, device=self.device)
                     #errD_real = self.BCE_loss(output, label)
                     errD_real = -torch.mean(real_output)
-                    errD_real.backward()
+                    #errD_real.backward()
                     # clam pred_y to be between 0 and 255
                     #pred_y = torch.clamp(pred_y, 0, 255)
                     #encoded = self.model.encode(batch_y)
@@ -164,14 +174,19 @@ class SimVPGAN(Base_method):
                     #label.fill_(self.fake_label)
                     #errD_fake = self.BCE_loss(output, label)
                     errD_fake = torch.mean(fake_output)
-                    errD_fake.backward()
+                    #errD_fake.backward()
 
-                    errD = errD_real + errD_fake
+                    gradient_penalty = self.compute_gradient_penalty(batch_y, pred_y.detach())
+                    lambda_gp = 10
+                    
+                    errD = errD_real + errD_fake + lambda_gp * gradient_penalty
+                    errD.backward()
+                    #errD = errD_real + errD_fake
                     # Update the discriminator
                     self.dmodel_optim.step()
                     #_, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
-                    for p in self.d_model.parameters():
-                        p.data.clamp_(-self.clip_value, self.clip_value)
+                    # for p in self.d_model.parameters():
+                    #     p.data.clamp_(-self.clip_value, self.clip_value)
  
                 self.model.zero_grad()
 

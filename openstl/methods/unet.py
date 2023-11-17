@@ -65,7 +65,7 @@ class UNet(Base_method):
                 pred_y.append(cur_seq[:, :m])
             
             pred_y = torch.cat(pred_y, dim=1)
-        return pred_y, translated
+        return pred_y, translated, None
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
@@ -93,7 +93,7 @@ class UNet(Base_method):
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
-                pred_y, translated = self._predict(batch_x)
+                pred_y, translated, _ = self._predict(batch_x)
                 #encoded = self.model.encode(batch_y)
                 #recon = self.model.recon(batch_x)
                 #mse_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]], batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
