@@ -35,7 +35,7 @@ class UNetResid(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,0,0,0,1])
+        self.adapt_weights = torch.tensor([1,0,0,0,0])
         n_steps = 100
         y_50 = 0.01
         decay_constant = -math.log(y_50) / 50
@@ -79,7 +79,7 @@ class UNetResid(Base_method):
         trend_model.to(self.device) 
         # set trend model to eval mode
         trend_model.eval()
-        resid_model = UNetQ_Model(**args).to(self.device)
+        resid_model = UNet_Model(**args).to(self.device)
         return resid_model, trend_model
 
     def _predict(self, batch_x, batch_y=None, test=False, **kwargs):
@@ -114,7 +114,7 @@ class UNetResid(Base_method):
                 pred_y.append(cur_seq[:, :m])
             
             pred_y = torch.cat(pred_y, dim=1)
-        return pred_y, resid, trend
+        return pred_y, resid
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
@@ -159,9 +159,9 @@ class UNetResid(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-                pred_y, resid, _ = self._predict(batch_x, batch_y)
+                pred_y, _ = self._predict(batch_x, batch_y)
                 # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,32:33,32:33], batch_y[:,:,4:5,32:33,32:33], batch_static[:,:,:,32:33,32:33])
 
                 self.model.zero_grad()
                 #label.fill_(self.real_label)  # fake labels are real for generator cost

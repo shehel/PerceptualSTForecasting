@@ -1,7 +1,7 @@
 method = 'UNet'
-in_channels = 96
+in_channels = 48
 out_ts = 12
-out_ch = 8
+out_ch = 4
 depth = 3
 wf = 6
 padding = True

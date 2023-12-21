@@ -28,7 +28,7 @@ class SimVP(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
         self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1,0,0,1,0])
+        self.adapt_weights = torch.tensor([1,0,0,0,0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -42,7 +42,10 @@ class SimVP(Base_method):
         #self.criterion_cpu =  pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=False)
 
     def _build_model(self, args):
-        return SimVP_Model(**args).to(self.device)
+
+        model = SimVP_Model(**args)
+        model = model.to(self.device)
+        return model
 
     def _predict(self, batch_x, batch_y=None, **kwargs):
         """Forward the model"""
@@ -70,6 +73,9 @@ class SimVP(Base_method):
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
+        # pixels = train_loader.dataset.pixel_list
+        # pixels = torch.tensor(pixels, dtype=torch.long)
+        # self.criterion.pixels = pixels
         data_time_m = AverageMeter()
         losses_m = AverageMeter()
         losses_mse_m = AverageMeter()
@@ -82,7 +88,7 @@ class SimVP(Base_method):
         if self.by_epoch:
             self.scheduler.step(epoch)
         train_pbar = tqdm(train_loader) if self.rank == 0 else train_loader
-
+        pixel_list = train_loader.dataset.pixel_list
         end = time.time()
         for batch_x, batch_y, batch_static in train_pbar:
 
@@ -107,7 +113,14 @@ class SimVP(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                pred_y = pred_y[:,:,pixel_list[:,2],pixel_list[:,0],pixel_list[:,1]]
+                batch_y = batch_y[:,:,pixel_list[:,2],pixel_list[:,0],pixel_list[:,1]]
+                pred_y = train_loader.dataset.scaler.inverse_transform(pred_y)
+                batch_y = train_loader.dataset.scaler.inverse_transform(batch_y)
+                # clip pred_y to be between 0 and 1000
+                #pred_y = torch.clamp(pred_y, 0, 1000)
+
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,:], batch_y[:,:,:], batch_static)
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
                 #loss = self.adapt_weights[2] * std_div + (1-self.adapt_weights[2]) * (mse_div) + self.adapt_weights[0]*mse_loss
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))

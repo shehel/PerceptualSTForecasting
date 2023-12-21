@@ -17,7 +17,7 @@ class UNet_Model(nn.Module):
     """
 
     def __init__(
-        self, in_channels=96, out_ts=12, out_ch=8, depth=3, wf=6, padding=True, batch_norm=True, up_mode="upconv",
+        self, in_channels=48, out_ts=12, out_ch=4, depth=3, wf=6, padding=True, batch_norm=True, up_mode="upconv",
         pos_emb=False, **kwargs
     ):
         super(UNet_Model, self).__init__()
@@ -38,9 +38,13 @@ class UNet_Model(nn.Module):
             self.down_path.append(UNetConvBlock(prev_channels, 2 ** (wf + i), padding, batch_norm, time_emb_dim=6 if pos_emb else None))
             prev_channels = 2 ** (wf + i)
 
-        self.hid = MidMetaNet(256, 256, 4,
-                 input_resolution=(32, 32), model_type="convsc")
 
+
+        #self.hid = MidMetaNet(256, 256, 4,
+        #         input_resolution=(16, 16), model_type="convsc")
+        self.hid = MidMetaNet(256, 256, 4,
+                input_resolution=(16, 16), model_type='gsta')
+                   #mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
             self.up_path.append(UNetUpBlock(prev_channels, 2 ** (wf + i), up_mode, padding, batch_norm, time_emb_dim=6 if pos_emb else None))
@@ -62,8 +66,8 @@ class UNet_Model(nn.Module):
             if i != len(self.down_path) - 1:
                 blocks.append(x)
                 x = torch.nn.functional.max_pool2d(x, 2)
-        
         x = self.hid(x)
+
         # copy translated to x
         translated = x
         for i, up in enumerate(self.up_path):

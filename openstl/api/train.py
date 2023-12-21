@@ -42,7 +42,7 @@ def get_ani(mat):
     fig, ax = plt.subplots(figsize=(8, 8))
     imgs = []
     for img in mat:
-        img = ax.imshow(img, animated=True, vmax=50, vmin=0)
+        img = ax.imshow(img, animated=True, vmax=500, vmin=0)
         imgs.append([img])
     ani = animation.ArtistAnimation(fig, imgs, interval=1000, blit=True, repeat_delay=3000)
     plt.close()
@@ -131,14 +131,14 @@ class BaseExperiment(object):
         base_dir = self.args.res_dir if self.args.res_dir is not None else 'work_dirs'
         try:
             task = Task.get_task(task_id=self.args.ex_name)
-            #model_path = task.artifacts['best_model_weights'].get_local_copy()
-            model_path = task.artifacts['latest_model_weights'].get_local_copy()
+            model_path = task.artifacts['best_model_weights'].get_local_copy()
+            #model_path = task.artifacts['latest_model_weights'].get_local_copy()
             # copy the model at location self.path to ./work_dirs/task.name
             # but make the dir before if it doesnt exist
             if not os.path.exists(f"{base_dir}/{task.name}"):
                 os.makedirs(f"{base_dir}/{task.name}/checkpoints")
-            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
-            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
+            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
+            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
             self.args.ex_name = task.name
         except:
             print ("Not a clearml task. Using local directory")
@@ -407,33 +407,44 @@ class BaseExperiment(object):
         """A validation loop during training"""
         self.call_hook('before_val_epoch')
         results = self.method.vali_one_epoch(self, self.vali_loader)
+        
         for loss, name in zip(results['loss'], self.losses):
             logger.report_scalar(title='Training Report',
-                        series=name, value=loss.cpu().numpy(), iteration=epoch)
+                        series=name, value=loss, iteration=epoch)
         # subtract results['inputs'] by its temporal mean along first dimension using numpy
         #results['inputs'] = results['inputs'] - np.mean(results['inputs'], axis=1, keepdims=True)
 
-        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis],
-                    results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
+        #plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis],
+        #            results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
 
-        x_values = range(len(results['trues'][19, :, 0, 64, 64]))
+        #x_values = range(len(results['trues'][19, :, 0, 32, 32]))
+        x_values = range(len(results['trues'][19, :, 0]))
         shifted_x_values = [x - shift_amount for x in x_values]  # Shift x-values for 'inputs'
 
         # Define the list of pixel coordinates
-        pixel_list = [(64, 64), (51, 56), (51, 40)]
-
+        #pixel_list = [(32, 32), (19, 24), (19, 12)]
+        #pixel_list = [(64, 64), (51, 56), (51, 40)]
+        #pixel_list = [(64, 64), (64, 65), (66, 92), (53, 46), (62, 49), (76, 90), (35, 45), (36, 65), (56, 46), (58, 69), (44, 95), (89, 81)]
+        # pixel_list = [[62, 61],
+        #     [64, 60],
+        #     [65, 60],
+        #     [66, 60],
+        #     [69, 58],
+        #     [71, 58],
+        #     [74, 56],
+        #     [75, 56]]
+        pixel_list = [0, 310, 50, 200, 400, 595]
         # Iterate over each time step for which we want to visualize the data
         for i in [10, 50, 100, 150]:
             # Iterate over each pixel coordinate
             for pixel in pixel_list:
-                y, x = pixel  # Unpack the tuple into x and y coordinates
 
                 # Plot the inputs, true values, and predictions for each pixel
-                plt.plot(shifted_x_values, results['inputs'][i, :, 0, y, x], label=f"Inputs at {pixel}")
-                plt.plot(x_values, results['trues'][i, :, 0, y, x], label=f"True at {pixel}")
-                plt.plot(x_values, results['preds'][i, :, 0, y, x], label=f"Preds_m at {pixel}")
+                plt.plot(shifted_x_values, results['inputs'][i, :, pixel], label=f"Inputs at {pixel}")
+                plt.plot(x_values, results['trues'][i, :, pixel], label=f"True at {pixel}")
+                plt.plot(x_values, results['preds'][i, :, pixel], label=f"Preds_m at {pixel}")
 
                 # Show the legend and get the current figure
                 plt.legend()
@@ -441,24 +452,23 @@ class BaseExperiment(object):
 
                 # Log the figure using the logger for the specific pixel and time step
                 logger.report_matplotlib_figure(
-                    f"px_{pixel}_{i}",
-                    "true and pred",
+                    f"ts_{i}",
+                    f"px_{pixel}",
                     iteration=epoch,
                     figure=fig,
                     report_image=True,
                     report_interactive=True
                 )
             # After plotting for all pixels at the current time step, close the plot to avoid overlap
-            plt.close()
+                plt.close()
 
         # The second part of the visualization seems to be a time series plot for the first pixel.
         # If similar time series plots are required for all pixels, iterate over the pixel list:
         for pixel in pixel_list:
-            y, x = pixel  # Unpack the tuple into x and y coordinates
 
             # Plot the true values and predictions over the specified range for each pixel
-            plt.plot(results['trues'][:240, 0, 0, y, x], label=f"True at {pixel}")
-            plt.plot(results['preds'][:240, 0, 0, y, x], label=f"Preds_m at {pixel}")
+            plt.plot(results['trues'][:240, 0, pixel], label=f"True at {pixel}")
+            plt.plot(results['preds'][:240, 0, pixel], label=f"Preds_m at {pixel}")
 
             # Show the legend and get the current figure
             plt.legend()
@@ -561,18 +571,18 @@ class BaseExperiment(object):
         
         self.call_hook('after_val_epoch')
         inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
-        results["trues"] = (results["trues"]+inp_mean)
-        results["preds"] = (results["preds"]+np.expand_dims(inp_mean, axis=1))
-        results["inputs"] = (results["inputs"]).astype(np.uint8)
+        # results["trues"] = results["trues"].astype(np.uint16)
+        # results["preds"] = results["preds"].astype(np.uint16)
+        # results["inputs"] = results["inputs"].astype(np.uint16)
 
         # clamp trues and preds to be between 0 and 255 and convert to uint8
-        results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)
-        results["preds"] = np.clip(results["preds"], 0, 255).astype(np.uint8)
+        #results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)
+        #results["preds"] = np.clip(results["preds"], 0, 255).astype(np.uint8)
 
         if self._rank == 0:
-            folder_path = osp.join(self.path, 'saved')
+            folder_path = osp.join(self.path, 'saved1')
             check_dir(folder_path)
-            for np_data in ['inputs', 'trues', 'preds']:
+            for np_data in ['trues', 'inputs', 'preds']:
                 np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 
         return None

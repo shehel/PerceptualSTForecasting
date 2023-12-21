@@ -1,7 +1,7 @@
 import numpy as np
 import torch
 
-
+import pdb
 class Recorder:
     def __init__(self, verbose=False, delta=0, early_stop_time=10, warmup=0):
         self.verbose = verbose
@@ -13,7 +13,7 @@ class Recorder:
         self.warmup = warmup
 
     def __call__(self, val_loss, model, path, epoch, early_stop=False):
-        if epoch > self.warmup:
+        if epoch >= self.warmup:
             score = -val_loss
             if self.best_score is None:
                 self.best_score = score

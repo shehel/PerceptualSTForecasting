@@ -52,6 +52,13 @@ dataset_parameters = {
         'total_length': 24,
         'metrics': ['mse', 'mae'],
     },
+    'sd': {
+        'in_shape': [12, 4, 128, 128],
+        'pre_seq_length': 12,
+        'aft_seq_length': 12,
+        'total_length': 24,
+        'metrics': ['mse', 'mae'],
+    },
 
     'human': {
         'in_shape': [4, 3, 256, 256],

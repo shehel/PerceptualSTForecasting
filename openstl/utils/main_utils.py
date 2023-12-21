@@ -387,6 +387,25 @@ class PinballLoss():
         loss = loss.mean()
 
       return loss
+def masked_mae(preds, labels, null_val):
+    if torch.isnan(null_val):
+        mask = ~torch.isnan(labels)
+    else:
+        mask = (labels != null_val)
+    mask = mask.float()
+    mask /= torch.mean((mask))
+    mask = torch.where(torch.isnan(mask), torch.zeros_like(mask), mask)
+    #std_preds = torch.std(preds, dim=1)
+    #std_labels = torch.std(labels, dim=1)
+    #std_loss = (std_preds - std_labels)**2
+    #std_loss = torch.where(torch.isnan(std_loss), torch.zeros_like(std_loss), std_loss)
+
+    loss = torch.abs(preds - labels)
+    loss = loss * mask
+    loss = torch.where(torch.isnan(loss), torch.zeros_like(loss), loss)
+    return torch.mean(loss[:,:,:])#+(0.01*torch.mean(std_loss))
+
+
 class DifferentialDivergenceLoss(nn.Module):
     def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.0001):
         super(DifferentialDivergenceLoss, self).__init__()
@@ -397,12 +416,22 @@ class DifferentialDivergenceLoss(nn.Module):
         self.main_loss = nn.MSELoss()
         #self.ssim = SSIM(window_size=4)
         self.q_loss = QuantileRegressionLoss(params={"q_lo": 0.05, "q_hi": 0.95, "q_lo_weight": 1, "q_hi_weight": 1, "mse_weight": 1})
-        self.pixels = [(42, 23), (45, 26), (43, 24), (28, 28), (22, 25), (24, 26), (8, 71), (26, 27), (44, 25), (27, 28), (19, 24), (25, 27), (18, 24), (20, 24), (41, 22), (21, 25), (23, 26), (65, 90), (48, 34), (66, 91), (46, 27), (53, 42), (57, 47), (54, 43), (62, 56), (51, 39), (69, 109), (49, 36), (50, 37), (70, 111), (60, 53), (56, 46), (48, 33), (67, 104), (52, 40), (7, 71), (71, 114), (58, 48), (72, 127), (61, 54), (67, 93), (29, 28), (40, 22), (41, 23), (68, 106), (62, 57), (6, 70), (61, 55), (64, 89)]
+        #self.pixels = [(42, 23), (45, 26), (43, 24), (28, 28), (22, 25), (24, 26), (8, 71), (26, 27), (44, 25), (27, 28), (19, 24), (25, 27), (18, 24), (20, 24), (41, 22), (21, 25), (23, 26), (65, 90), (48, 34), (66, 91), (46, 27), (53, 42), (57, 47), (54, 43), (62, 56), (51, 39), (69, 109), (49, 36), (50, 37), (70, 111), (60, 53), (56, 46), (48, 33), (67, 104), (52, 40), (7, 71), (71, 114), (58, 48), (72, 127), (61, 54), (67, 93), (29, 28), (40, 22), (41, 23), (68, 106), (62, 57), (6, 70), (61, 55), (64, 89)]
+        self.pixels = [(62, 61),
+            (64, 65),
+            (36, 83),
+            (63, 86),
+            (67, 94),
+            (58, 49),
+            (50, 37),
+            (42, 95),
+            (60, 90)]
+        #self.pixels = [(25, 15), (30, 24), (28, 21), (16, 2), (22, 11), (24, 14), (21, 10), (29, 22), (19, 7), (26, 16), (33, 58), (16, 1), (18, 5), (34, 59), (29, 23), (17, 4), (30, 25), (31, 27), (20, 8), (13, 31), (27, 19), (31, 28), (27, 18), (31, 26), (35, 61), (17, 3), (23, 12), (0, 62), (32, 57), (31, 29), (32, 32), (23, 13), (36, 63), (32, 31), (31, 30), (18, 6), (32, 33), (15, 0), (26, 17), (32, 34), (28, 20), (31, 54), (35, 60), (32, 35), (21, 9), (3, 62), (20, 9), (7, 51), (31, 52), (32, 36)]
         # Create indices for fixed positions
-        self.pixels = self.pixels[:20]
+        self.pixels = self.pixels[0:1]
         self.pixels = torch.tensor(self.pixels, dtype=torch.long)
 
-    def forward(self, pred, true, static_ch):
+    def forward(self, pred, true, static_ch, train_run=True):
         #true_std = torch.std(true, dim=1, keepdim=False)
         #true_std = true_std/((torch.max(true_std)+self.epsilon))
         #mse_loss = self.q_loss(pred, true, static_ch[:,0], true_std)
@@ -411,14 +440,13 @@ class DifferentialDivergenceLoss(nn.Module):
         #std_loss = self.ssim(pred, true)
         #mse_loss = dilate_loss(pred[:,:,0,64:65,64], true[:,:,0,64:65,64], alpha=0.1, gamma=0.001, device=pred.device)[0]
         #mse_loss = 1- ssim3D(pred, true, static_ch=static_ch)
-        sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
+
         #sampled_true, sampled_pred = sample_top_pixels_modified(true, pred, static_ch)
         # binatrize static_ch
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
         #mse_loss, reg_mse, reg_std = self.main_loss(pred[:,:,]*static_ch, true[:,:]*static_ch)
         #sum_loss, std_loss, mse_loss = ssim3D(pred, true, static_ch=static_ch)
         #sum_loss = mse_of_spatial_std(pred[:,:,0], true[:,:,0], static_ch)
-        reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
         #reg_std = self.main_loss(pred*static_ch, true*static_ch)
         # pred = pred * static_ch
         # true = true * static_ch
@@ -434,8 +462,20 @@ class DifferentialDivergenceLoss(nn.Module):
         #sum_loss = self.main_loss(true_ratios,predicted_ratios)
         #pred = pred * static_ch
         #true = true * static_ch
-        mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
+        mask_value = torch.tensor(0)
+        if true.min() < 1:
+            mask_value = true.min()
+        mse_loss = masked_mae(pred[:,:], true[:,:], mask_value)
+        #mse_loss = (torch.sum(F.mse_loss(pred, true, reduction='none') * static_ch))/596
         sum_loss = mse_loss
+        if train_run==False:
+            #sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
+            sampled_true = true[:, :, 0:1]
+            sampled_pred = pred[:, :, 0:1]
+            reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
+        else:
+            reg_mse = mse_loss
+            reg_std = mse_loss
         #pred_prob = F.softmax(sum_1, dim=1)
         #true_prob = F.softmax(sum_2, dim=1)
 
@@ -443,7 +483,7 @@ class DifferentialDivergenceLoss(nn.Module):
         #sum_loss = F.kl_div(torch.log(pred_prob + self.epsilon), true_prob, reduction='batchmean')
 
         std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
-        std_loss = torch.mean(std_loss * static_ch[:,0])
+        std_loss = torch.mean(std_loss)
         #sum_loss = std_loss
         #sum_loss = F.mse_loss(torch.sum(pred, dim=1), torch.sum(true,dim=1))
         #reg_std = modified_total_variation_loss(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
