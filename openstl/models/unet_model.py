@@ -43,7 +43,7 @@ class UNet_Model(nn.Module):
         #self.hid = MidMetaNet(256, 256, 4,
         #         input_resolution=(16, 16), model_type="convsc")
         self.hid = MidMetaNet(256, 256, 4,
-                input_resolution=(16, 16), model_type='gsta')
+                input_resolution=(16, 16), model_type='convsc')
                    #mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):

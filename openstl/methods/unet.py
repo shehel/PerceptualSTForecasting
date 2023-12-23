@@ -33,7 +33,7 @@ class UNet(Base_method):
         # set 1 to be a torch.tensor and move it to gpu
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.adapt_weights = torch.tensor([0,0.001,1,0,0])
 
         self.component_1 = []
         self.component_2 = []

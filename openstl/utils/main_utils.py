@@ -26,7 +26,7 @@ from .config_utils import Config
 from torch.autograd import Variable
 from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 import pdb
-
+import einops
 from . import soft_dtw
 from . import path_soft_dtw
 
@@ -400,11 +400,67 @@ def masked_mae(preds, labels, null_val):
     #std_loss = (std_preds - std_labels)**2
     #std_loss = torch.where(torch.isnan(std_loss), torch.zeros_like(std_loss), std_loss)
 
-    loss = torch.abs(preds - labels)
+    loss = torch.abs(preds - labels)**2
     loss = loss * mask
     loss = torch.where(torch.isnan(loss), torch.zeros_like(loss), loss)
     return torch.mean(loss[:,:,:])#+(0.01*torch.mean(std_loss))
 
+def masked_std(preds, labels, null_val):
+    if torch.isnan(null_val):
+        mask = ~torch.isnan(labels)
+    else:
+        mask = (labels != null_val)
+    mask = mask.float()
+    mask /= torch.mean((mask))
+    mask = torch.where(torch.isnan(mask), torch.zeros_like(mask), mask)
+    std_preds = torch.std(preds, dim=1)
+    std_labels = torch.std(labels, dim=1)
+    std_loss = (std_preds - std_labels)**2
+    std_loss = torch.where(torch.isnan(std_loss), torch.zeros_like(std_loss), std_loss)
+
+    # loss = torch.abs(preds - labels)
+    # loss = loss * mask
+    # loss = torch.where(torch.isnan(loss), torch.zeros_like(loss), loss)
+    return torch.mean(std_loss)#+(0.01*torch.mean(std_loss))
+
+def masked_dilate(preds, labels, null_val, train_run=False):
+    if torch.isnan(null_val):
+        mask = ~torch.isnan(labels)
+    else:
+        mask = (labels != null_val)
+    mask = mask.float()
+    mask /= torch.mean((mask))
+    mask = torch.where(torch.isnan(mask), torch.zeros_like(mask), mask)
+    #std_preds = torch.std(preds, dim=1)
+    #std_labels = torch.std(labels, dim=1)
+    #std_loss = (std_preds - std_labels)**2
+    #std_loss = torch.where(torch.isnan(std_loss), torch.zeros_like(std_loss), std_loss)
+
+    preds = preds * mask
+    labels = labels * mask
+    
+    # randomly sample 20 numbers between 0 and 596
+    #sampled_indices = torch.randint(0, 596, (20,))
+
+    # generate random indices for sampled_indices
+    if train_run:
+        sampled_indices = torch.randint(0, 596, (10,))
+    else:
+        sampled_indices = [0, 310, 50, 200, 400, 595]
+    # form sample_pred and sample_true by selecting only sampled_indices
+    sampled_pred = preds[:, :,sampled_indices]
+    sampled_true = labels[:, :,sampled_indices]
+    # stack the sampled_pred and sampled_true along the batch dimension. That is, all sampled indices will be stacked in the first dimension
+    sampled_pred = einops.rearrange(sampled_pred, 'b n i -> (b i) n 1')
+    sampled_true = einops.rearrange(sampled_true, 'b n i -> (b i) n 1')
+
+    reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.0001, gamma=0.1, device=labels.device)
+    # if reg_mse or reg_std is nan, replace it with 0
+    reg_mse = torch.where(torch.isnan(reg_mse), torch.zeros_like(reg_mse), reg_mse)
+    reg_std = torch.where(torch.isnan(reg_std), torch.zeros_like(reg_std), reg_std)
+    
+    #loss = torch.where(torch.isnan(loss), torch.zeros_like(loss), loss)
+    return reg_mse,reg_std#torch.mean(loss[:,:,:])#+(0.01*torch.mean(std_loss))
 
 class DifferentialDivergenceLoss(nn.Module):
     def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.0001):
@@ -468,22 +524,24 @@ class DifferentialDivergenceLoss(nn.Module):
         mse_loss = masked_mae(pred[:,:], true[:,:], mask_value)
         #mse_loss = (torch.sum(F.mse_loss(pred, true, reduction='none') * static_ch))/596
         sum_loss = mse_loss
-        if train_run==False:
+        #if train_run==False:
             #sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
-            sampled_true = true[:, :, 0:1]
-            sampled_pred = pred[:, :, 0:1]
-            reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
-        else:
-            reg_mse = mse_loss
-            reg_std = mse_loss
+        #sampled_true = true[:, :, 0:1]
+        #sampled_pred = pred[:, :, 0:1]
+        #reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
+        reg_mse, reg_std = masked_dilate(pred, true, mask_value, train_run=train_run)
+        #else:
+        #    reg_mse = mse_loss
+        #    reg_std = mse_loss
         #pred_prob = F.softmax(sum_1, dim=1)
         #true_prob = F.softmax(sum_2, dim=1)
 
         # do kl div loss on pred_prob and true_prob using F.kl_div
         #sum_loss = F.kl_div(torch.log(pred_prob + self.epsilon), true_prob, reduction='batchmean')
 
-        std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
-        std_loss = torch.mean(std_loss)
+        std_loss = masked_std(pred[:,:], true[:,:], mask_value)
+            #F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
+        #std_loss = #torch.mean(std_loss)
         #sum_loss = std_loss
         #sum_loss = F.mse_loss(torch.sum(pred, dim=1), torch.sum(true,dim=1))
         #reg_std = modified_total_variation_loss(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
