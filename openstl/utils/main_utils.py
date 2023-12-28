@@ -400,7 +400,7 @@ def masked_mae(preds, labels, null_val):
     #std_loss = (std_preds - std_labels)**2
     #std_loss = torch.where(torch.isnan(std_loss), torch.zeros_like(std_loss), std_loss)
 
-    loss = torch.abs(preds - labels)**2
+    loss = torch.abs(preds - labels)
     loss = loss * mask
     loss = torch.where(torch.isnan(loss), torch.zeros_like(loss), loss)
     return torch.mean(loss[:,:,:])#+(0.01*torch.mean(std_loss))
@@ -421,7 +421,7 @@ def masked_std(preds, labels, null_val):
     # loss = torch.abs(preds - labels)
     # loss = loss * mask
     # loss = torch.where(torch.isnan(loss), torch.zeros_like(loss), loss)
-    return torch.mean(std_loss)#+(0.01*torch.mean(std_loss))
+    return torch.mean(std_loss)
 
 def masked_dilate(preds, labels, null_val, train_run=False):
     if torch.isnan(null_val):
@@ -443,13 +443,15 @@ def masked_dilate(preds, labels, null_val, train_run=False):
     #sampled_indices = torch.randint(0, 596, (20,))
 
     # generate random indices for sampled_indices
-    if train_run:
-        sampled_indices = torch.randint(0, 596, (10,))
-    else:
-        sampled_indices = [0, 310, 50, 200, 400, 595]
+    #if train_run:
+    sampled_indices = torch.randint(0, 596, (10,))
+    #else:
+    sampled_indices = [0, 310, 50, 200, 400, 595]
     # form sample_pred and sample_true by selecting only sampled_indices
     sampled_pred = preds[:, :,sampled_indices]
     sampled_true = labels[:, :,sampled_indices]
+    #sampled_true = labels[sampled_indices,:,:]
+    #sampled_pred = labels[sampled_indices,:,:]
     # stack the sampled_pred and sampled_true along the batch dimension. That is, all sampled indices will be stacked in the first dimension
     sampled_pred = einops.rearrange(sampled_pred, 'b n i -> (b i) n 1')
     sampled_true = einops.rearrange(sampled_true, 'b n i -> (b i) n 1')
@@ -529,7 +531,10 @@ class DifferentialDivergenceLoss(nn.Module):
         #sampled_true = true[:, :, 0:1]
         #sampled_pred = pred[:, :, 0:1]
         #reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
-        reg_mse, reg_std = masked_dilate(pred, true, mask_value, train_run=train_run)
+        if train_run:
+            reg_mse, reg_std = mse_loss, mse_loss
+        else:
+            reg_mse, reg_std = masked_dilate(pred, true, mask_value, train_run=train_run)
         #else:
         #    reg_mse = mse_loss
         #    reg_std = mse_loss

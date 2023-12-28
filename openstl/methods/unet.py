@@ -33,7 +33,7 @@ class UNet(Base_method):
         # set 1 to be a torch.tensor and move it to gpu
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([0,0.001,1,0,0])
+        self.adapt_weights = torch.tensor([1,0,0,0.05,0])
 
         self.component_1 = []
         self.component_2 = []
@@ -88,7 +88,7 @@ class UNet(Base_method):
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
         pixels = train_loader.dataset.pixel_list
-        pixels = torch.tensor(pixels, dtype=torch.long)
+        #pixels = torch.tensor(pixels, dtype=torch.long)
         self.criterion.pixels = pixels
         
         
@@ -133,12 +133,11 @@ class UNet(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-
                 pred_y, _ = self._predict(batch_x, batch_y)
                 # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
                 #_, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:], batch_y[:,:,4:5,], batch_static[:,:,:,])
-                pred_y = pred_y[:,:,pixel_list[:,2],pixel_list[:,0],pixel_list[:,1]]
-                batch_y = batch_y[:,:,pixel_list[:,2],pixel_list[:,0],pixel_list[:,1]]
+                pred_y = pred_y[batch_static[:,2],:,:,batch_static[:,0],batch_static[:,1]]
+                batch_y = batch_y[batch_static[:,2],:,:,batch_static[:,0],batch_static[:,1]]
                 pred_y = train_loader.dataset.scaler.inverse_transform(pred_y)
                 batch_y = train_loader.dataset.scaler.inverse_transform(batch_y)
                 # round pred_y and batch_y to nearest integer

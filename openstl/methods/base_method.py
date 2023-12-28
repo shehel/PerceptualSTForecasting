@@ -159,6 +159,11 @@ class Base_method(object):
             results_all (dict(np.ndarray)): The concatenated outputs.
         """
         # preparation
+        perm = [[0,1,2,3],
+            [1,2,3,0],
+            [2,3,0,1],
+            [3,0,1,2]
+            ]
         gather_data=True
         results = []
         cycles = 0
@@ -166,74 +171,142 @@ class Base_method(object):
         length = len(data_loader.dataset) if length is None else length
         eval_res = []
         pixel_list = data_loader.dataset.pixel_list
-        for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
-            with torch.no_grad():
-                batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
-                pred_y, trend = self._predict(batch_x, batch_y)
-                batch_x = batch_x[:,:,pixel_list[:,2],pixel_list[:,0],pixel_list[:,1]]
-                pred_y = pred_y[:,:,pixel_list[:,2],pixel_list[:,0],pixel_list[:,1]]
-                batch_y = batch_y[:,:,pixel_list[:,2],pixel_list[:,0],pixel_list[:,1]]
+        pixel_list_val = data_loader.dataset.pixel_list_val
+        if data_loader.dataset.perm:
+            data_loader.dataset.perm = False
+            for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
+                # create an empty torch tensor of shape batch_x
+                pred_y = torch.zeros_like(batch_x)
+                for i in range(4):
+                    with torch.no_grad():
+                        
+                        batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
+                        batch_x_p = batch_x[:,:,perm[i],:,:]
+                        batch_y_p = batch_y[:,:,i:i+1,:,:]
+                        pred_p, trend = self._predict(batch_x_p, batch_y_p)
+                        pred_y[:,:,i:i+1,:,:] = pred_p
+                # send pred_y to gpu
+                pred_y = pred_y.to(self.device)
+                batch_x = batch_x[:,:,pixel_list_val[:,2], pixel_list_val[:,0],pixel_list_val[:,1]]
+                pred_y = pred_y[:,:,pixel_list_val[:,2],pixel_list_val[:,0],pixel_list_val[:,1]]
+                batch_y = batch_y[:,:,pixel_list_val[:,2],pixel_list_val[:,0],pixel_list_val[:,1]]
+                #batch_x = batch_x[batch_static[:,2],:,:,batch_static[:,0],batch_static[:,1]]
+                #pred_y = pred_y[batch_static[:,2],:,:,batch_static[:,0],batch_static[:,1]]
+                #batch_y = batch_y[batch_static[:,2],:,:,batch_static[:,0],batch_static[:,1]]
 
                 pred_y = data_loader.dataset.scaler.inverse_transform(pred_y)
                 batch_y = data_loader.dataset.scaler.inverse_transform(batch_y)
                 batch_x = data_loader.dataset.scaler.inverse_transform(batch_x)
-                # round to nearest integer
-                #assert pred_y.shape == batch_y.shape
-                #assert trend.shape == batch_y.shape
-                #pred_y = pred_y + trend
-                
-                
-
-
-            if gather_data:  # return raw datas
-                results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
-                                        [batch_x[:,:,:].cpu().numpy(),
-                                     pred_y[:,:,:,].cpu().numpy(),
-                                     batch_y[:,:,:].cpu().numpy()])))
-            else:  # return metrics
-                #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
-                #                     data_loader.dataset.mean, data_loader.dataset.std,
-                #                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
-                losses_m = self.criterion(pred_y, batch_y, batch_static, train_run=False)
-                # if eval_res is empty, initialize it
-                #losses_m[0] = self.adapt_weights[0] * losses_m[0] + self.adapt_weights[1] * losses_m[1] + self.adapt_weights[2] * losses_m[2] + self.adapt_weights[3] * losses_m[3] + self.adapt_weights[4] * losses_m[4]
-                if len(eval_res) == 0:
-                    eval_res = losses_m
-                else:
-                    for idx,_ in enumerate(eval_res):
-                        eval_res[idx] += losses_m[idx]
+                    # round to nearest integer
+                    #assert pred_y.shape == batch_y.shape
+                    #assert trend.shape == batch_y.shape
+                    #pred_y = pred_y + trend
                     
-        #dilate = self.val_criterion(preds, trues, static_ch)
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = eval_res
-        #results_all["loss"][0] = (reg_mse)*0.001 + reg_std
-                eval_res[0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                    
 
-                for idx, k in enumerate(eval_res):
-                    try:
-                        eval_res[idx] = eval_res[idx].cpu().numpy().item()
-                    except:
-                        pdb.set_trace()
-                cycles += 1
-                if i < 20:
-                    results.append(dict(zip(['inputs', 'preds', 'trues'],
-                                        [batch_x[:,:,:].cpu().numpy(),
-                                     pred_y[:,:,:].cpu().numpy(),
-                                     batch_y[:,:,:].cpu().numpy(),
-                                     ])))
-                                        
 
-            prog_bar.update()
-            if self.args.empty_cache:
-                torch.cuda.empty_cache()
-        
-        # post gather tensors
-        # results_all = {}
-        # for k in ['inputs', 'preds', 'trues']:
-        #     results_all[k] = np.concatenate([batch[k] for batch in results], axis=0)
-        # # divide each element of list eval_res by number of batches and assign it to results_all['losses']
-        # eval_res = [k/cycles for k in eval_res]
-        # results_all['loss'] = eval_res
-        
+                if gather_data:  # return raw datas
+                    results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
+                                            [batch_x[:,:,:].cpu().numpy(),
+                                        pred_y[:,:,:,].cpu().numpy(),
+                                        batch_y[:,:,:].cpu().numpy()])))
+                else:  # return metrics
+                    #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
+                    #                     data_loader.dataset.mean, data_loader.dataset.std,
+                    #                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
+                    losses_m = self.criterion(pred_y, batch_y, batch_static, train_run=False)
+                    # if eval_res is empty, initialize it
+                    #losses_m[0] = self.adapt_weights[0] * losses_m[0] + self.adapt_weights[1] * losses_m[1] + self.adapt_weights[2] * losses_m[2] + self.adapt_weights[3] * losses_m[3] + self.adapt_weights[4] * losses_m[4]
+                    if len(eval_res) == 0:
+                        eval_res = losses_m
+                    else:
+                        for idx,_ in enumerate(eval_res):
+                            eval_res[idx] += losses_m[idx]
+                        
+            #dilate = self.val_criterion(preds, trues, static_ch)
+                    _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = eval_res
+            #results_all["loss"][0] = (reg_mse)*0.001 + reg_std
+                    eval_res[0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+
+                    for idx, k in enumerate(eval_res):
+                        try:
+                            eval_res[idx] = eval_res[idx].cpu().numpy().item()
+                        except:
+                            pdb.set_trace()
+                    cycles += 1
+                    if i < 20:
+                        results.append(dict(zip(['inputs', 'preds', 'trues'],
+                                            [batch_x[:,:,:].cpu().numpy(),
+                                        pred_y[:,:,:].cpu().numpy(),
+                                        batch_y[:,:,:].cpu().numpy(),
+                                        ])))
+                                            
+
+                prog_bar.update()
+                if self.args.empty_cache:
+                    torch.cuda.empty_cache()
+            data_loader.dataset.perm = True
+        else:
+            for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
+                with torch.no_grad():
+                    batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
+                    pred_y, trend = self._predict(batch_x, batch_y)
+                    batch_x = batch_x[batch_static[:,0],:,:,batch_static[:,0],batch_static[:,1]]
+                    pred_y = pred_y[batch_static[:,0],:,:,batch_static[:,0],batch_static[:,1]]
+                    batch_y = batch_y[batch_static[:,0],:,:,batch_static[:,0],batch_static[:,1]]
+
+                    pred_y = data_loader.dataset.scaler.inverse_transform(pred_y)
+                    batch_y = data_loader.dataset.scaler.inverse_transform(batch_y)
+                    batch_x = data_loader.dataset.scaler.inverse_transform(batch_x)
+                    # round to nearest integer
+                    #assert pred_y.shape == batch_y.shape
+                    #assert trend.shape == batch_y.shape
+                    #pred_y = pred_y + trend
+                    
+                    
+
+
+                if gather_data:  # return raw datas
+                    results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
+                                            [batch_x[:,:,:].cpu().numpy(),
+                                        pred_y[:,:,:,].cpu().numpy(),
+                                        batch_y[:,:,:].cpu().numpy()])))
+                else:  # return metrics
+                    #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
+                    #                     data_loader.dataset.mean, data_loader.dataset.std,
+                    #                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
+                    losses_m = self.criterion(pred_y, batch_y, batch_static, train_run=False)
+                    # if eval_res is empty, initialize it
+                    #losses_m[0] = self.adapt_weights[0] * losses_m[0] + self.adapt_weights[1] * losses_m[1] + self.adapt_weights[2] * losses_m[2] + self.adapt_weights[3] * losses_m[3] + self.adapt_weights[4] * losses_m[4]
+                    if len(eval_res) == 0:
+                        eval_res = losses_m
+                    else:
+                        for idx,_ in enumerate(eval_res):
+                            eval_res[idx] += losses_m[idx]
+                        
+            #dilate = self.val_criterion(preds, trues, static_ch)
+                    _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = eval_res
+            #results_all["loss"][0] = (reg_mse)*0.001 + reg_std
+                    eval_res[0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+
+                    for idx, k in enumerate(eval_res):
+                        try:
+                            eval_res[idx] = eval_res[idx].cpu().numpy().item()
+                        except:
+                            pdb.set_trace()
+                    cycles += 1
+                    if i < 20:
+                        results.append(dict(zip(['inputs', 'preds', 'trues'],
+                                            [batch_x[:,:,:].cpu().numpy(),
+                                        pred_y[:,:,:].cpu().numpy(),
+                                        batch_y[:,:,:].cpu().numpy(),
+                                        ])))
+                                            
+
+                prog_bar.update()
+                if self.args.empty_cache:
+                    torch.cuda.empty_cache()
+                    
         results_all = {}
         for k in results[0].keys():
             results_all[k] = np.concatenate([batch[k] for batch in results], axis=0)
@@ -250,6 +323,15 @@ class Base_method(object):
         results_all["loss"][0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
         return results_all
 
+        
+        # post gather tensors
+        # results_all = {}
+        # for k in ['inputs', 'preds', 'trues']:
+        #     results_all[k] = np.concatenate([batch[k] for batch in results], axis=0)
+        # # divide each element of list eval_res by number of batches and assign it to results_all['losses']
+        # eval_res = [k/cycles for k in eval_res]
+        # results_all['loss'] = eval_res
+        
     def vali_one_epoch(self, runner, vali_loader, **kwargs):
         """Evaluate the model with val_loader.
 
