@@ -28,7 +28,7 @@ class SimVP(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
         self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1,0,0,1,0])
+        self.adapt_weights = torch.tensor([1,0,0,0,0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -42,7 +42,11 @@ class SimVP(Base_method):
         #self.criterion_cpu =  pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=False)
 
     def _build_model(self, args):
-        return SimVP_Model(**args).to(self.device)
+
+        model = SimVP_Model(**args)
+        #model.load_state_dict(torch.load("work_dirs/e1_q28_m16_simconvsc/checkpoints/latest.pth")['state_dict'], strict=False)
+        model = model.to(self.device)
+        return model
 
     def _predict(self, batch_x, batch_y=None, **kwargs):
         """Forward the model"""
@@ -94,7 +98,7 @@ class SimVP(Base_method):
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
-                pred_y, translated = self._predict(batch_x)
+                pred_y, _ = self._predict(batch_x)
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
                 #encoded = self.model.encode(batch_y)

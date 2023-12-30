@@ -124,6 +124,17 @@ class T4CDataset(Dataset):
         self.file_data = []
         self.file_list = []
         self.probability = 0.07
+        self.pixel_list = np.array([
+            [64, 64],
+            [64, 65],
+            [36, 83],
+            [63, 86],
+            [67, 94],
+            [58, 49],
+            [50, 37],
+            [42, 95],
+            [60, 90]
+        ])
 
     def __len__(self):
         return self.X.shape[0]
@@ -144,10 +155,16 @@ class T4CDataset(Dataset):
         self.weekday_mean = self.weekday_mean.astype(np.float32)
         self.weekend_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekend_mean.h5")
         self.weekend_mean = self.weekend_mean.astype(np.float32)
+        # self.weekday_std = load_h5_file(Path(self.root_dir) / "BERLIN/weekday_std.h5")
+        # # float 32da
+        # self.weekday_std = self.weekday_std.astype(np.float32)
+        # self.weekend_std = load_h5_file(Path(self.root_dir) / "BERLIN/weekend_std.h5")
+        # self.weekend_std = self.weekend_std.astype(np.float32)
+
         for city in static_list:
              self.static_dict[city.parts[-2]] = load_h5_file(city)
-        # for i, file in enumerate(self.file_list):
-        #      self.file_data.append(load_h5_file(file))
+        for i, file in enumerate(self.file_list):
+             self.file_data.append(load_h5_file(file).astype(np.float32))
 
 
     def _load_h5_file(self, fn, sl):
@@ -165,15 +182,16 @@ class T4CDataset(Dataset):
         start_hour = idx % MAX_TEST_SLOT_INDEX
 
         
-        two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
-        two_hours = two_hours.astype(np.float32)
+        #two_hours = self._load_h5_file(self.file_list[file_idx], sl=slice(start_hour, start_hour + self.pre_seq_length * 2 + 1))
+        two_hours = self.file_data[file_idx][start_hour:start_hour + self.pre_seq_length * 2 + 1]
+        #two_hours = two_hours.astype(np.float32)
         day = get_day_of_week(self.file_list[file_idx])
-        #two_hours = self.file_data[file_idx][start_hour:start_hour + self.pre_seq_length * 2 + 1]
 
         if day == "Saturday" or day == "Sunday":
-            two_hours = two_hours - self.weekend_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1]
+            two_hours = (two_hours - self.weekend_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1])#/(self.weekend_std[start_hour:start_hour + self.pre_seq_length * 2 + 1]+1e-6)
         else:
-            two_hours = two_hours - self.weekday_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1]
+            two_hours = (two_hours - self.weekday_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1])#/(self.weekday_std[start_hour:start_hour + self.pre_seq_length * 2 + 1]+1e-6)
+
         #two_hours = two_hours
         #two_hours = (two_hours - np.min(two_hours)) * (200 / (np.max(two_hours) - np.min(two_hours)))
         #
@@ -185,43 +203,44 @@ class T4CDataset(Dataset):
 
         # TODO
         if self.test:
-            random_int_x = 312
-            random_int_y = 68
+            random_int_x = 32
+            random_int_y = 32
         else:
-            random_int_x = 312
-            random_int_y = 68
+            random_int_x = 32
+            random_int_y = 32
 
             # random_int_x = random.randint(0, 300)
             # random_int_y = random.randint(0, 300)
-        #two_hours = two_hours[:,:,random_int_x:random_int_x + 128, 
-        #            random_int_y:random_int_y+128, ]
+        #two_hours = two_hours[:,:,random_int_x:random_int_x + 64,
+        #            random_int_y:random_int_y+64, ]
 
         #two_hours = (two_hours - self.m) / self.s
         #two_hours = two_hours/255
     
         dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
-        
+        if dynamic_input[:,4,:,:].max() > 255:
+            pdb.set_trace()
         static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
         #static_ch = static_ch/255
         # get mean of of dynamic input across first axis
         inp_mean = np.mean(dynamic_input, axis=0)
         # remove mean from output data
-        output_data = output_data - inp_mean
-        #static_ch = inp_mean[4,:,:]
+        #output_data = output_data - inp_mean
+        inp_static_ch = inp_mean[4,:,:]
         output_data = output_data[:,0::1,:,:]
-        static_ch = static_ch[0]#, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
-        static_ch = static_ch/static_ch.sum()
-        #static_ch = np.ones((128,128))
+        #static_ch = static_ch[0, random_int_x:random_int_x+64, random_int_y:random_int_y+64]
+        #static_ch = static_ch/static_ch.sum()
+        static_ch = np.zeros((128,128))
+        static_ch[64-32:64+32,64-32:64+32] = inp_static_ch[64-32:64+32,64-32:64+32] 
         if self.test:
-            #static_ch = np.where(static_ch > 0, 1,0)
+            static_ch = np.where(static_ch > 0, 1,0)
             a = 1
         else:
             #static_ch = find_largest(inp_mean[4], 1000)
-            #static_ch = np.where(static_ch > 0, 1,0)
+            static_ch = np.where(static_ch > 0, 1,0)
             a = 1
 
-
-        #static_ch[64,64] = 1
+        static_ch[self.pixel_list[:9, 0], self.pixel_list[:9, 1]] = 1
         static_ch = static_ch[np.newaxis, np.newaxis, :, :]
         
 
@@ -252,11 +271,10 @@ def train_collate_fn(batch):
 def load_data(batch_size, val_batch_size, data_root,
               num_workers=0, pre_seq_length=None, aft_seq_length=None,
               in_shape=None, distributed=False, use_prefetcher=False,use_augment=False):
-    num_workers = 0
     try:
         #data_root = Dataset.get(dataset_id="20fef9fe5f0b49319a7f380ae16d5d1e").get_local_copy() # berlin_full
         #data_root = Dataset.get(dataset_id="6ecb9b57d2034556829ebeb9c8a99d63").get_local_copy() # berlin_full
-        data_root = Dataset.get(dataset_id="75bf6ceb016c4231b03dbc4c11677ee0").get_local_copy()
+        data_root = Dataset.get(dataset_id="446207d29ccd48368e3a5a3d63d2feaa").get_local_copy()
         #data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")

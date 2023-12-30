@@ -36,7 +36,7 @@ class SimVPGAN(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([10,0,0,10,0])
+        self.adapt_weights = torch.tensor([100,0,0,100,0])
         n_steps = 100
         y_50 = 0.01
         decay_constant = -math.log(y_50) / 50
@@ -83,7 +83,7 @@ class SimVPGAN(Base_method):
         return opt_gen, sched_gen, epoch_gen, opt_dis, sched_dis, epoch_dis
     def _build_model(self, args):
         gen_model = SimVP_Model(**args)
-        gen_model.load_state_dict(torch.load("work_dirs/e1_q26_m27_simconvscresid/checkpoint.pth"), strict=False)
+        gen_model.load_state_dict(torch.load("work_dirs/e1_q28_m16_simconvsc/checkpoints/latest.pth")['state_dict'], strict=False)
         gen_model.to(self.device),
         disc = SimVPGAN_Model().to(self.device)
         return gen_model, disc
@@ -249,12 +249,12 @@ class SimVPGAN(Base_method):
             #loss, total_loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,:,:], batch_y[:,:,4:5,:,:])
             if not self.dist:
                 losses_m.update(loss.item(), batch_x.size(0))
-                losses_total.update(errD.item(), batch_x.size(0))
+                losses_total.update(errD_real.item(), batch_x.size(0))
                 losses_mse_m.update(mse_loss.item(), batch_x.size(0))
                 losses_reg_m.update(reg_mse.item(), batch_x.size(0))
                 losses_reg_s.update(reg_std.item(), batch_x.size(0))
                 losses_std.update(std_loss.item(), batch_x.size(0))
-                losses_sum.update(gen_loss.item(), batch_x.size(0))
+                losses_sum.update(errD_fake.item(), batch_x.size(0))
 
 
             if self.dist:
