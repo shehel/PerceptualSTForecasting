@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from openstl.datasets.utils import create_loader
-
+import pdb
 try:
     import xarray as xr
 except ImportError:
@@ -245,6 +245,7 @@ def load_data(batch_size,
               **kwargs):
 
     assert data_split in ['5_625', '2_8125', '1_40625']
+    data_root='./data/'
     _dataroot = osp.join(data_root, f'weather_{data_split}deg')
     weather_dataroot = _dataroot if osp.exists(_dataroot) else osp.join(data_root, 'weather')
 

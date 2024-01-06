@@ -83,7 +83,7 @@ class SimVPGAN(Base_method):
         return opt_gen, sched_gen, epoch_gen, opt_dis, sched_dis, epoch_dis
     def _build_model(self, args):
         gen_model = SimVP_Model(**args)
-        gen_model.load_state_dict(torch.load("work_dirs/e1_q28_m16_simconvsc/checkpoints/latest.pth")['state_dict'], strict=False)
+        # gen_model.load_state_dict(torch.load("work_dirs/e2_q5_m1_simconvsc/checkpoints/latest.pth")['state_dict'], strict=False)
         gen_model.to(self.device),
         disc = SimVPGAN_Model().to(self.device)
         return gen_model, disc
@@ -138,12 +138,12 @@ class SimVPGAN(Base_method):
 
             b_size = batch_y.size(0)
             with self.amp_autocast():
-                for _ in range(5):
+                for _ in range(1):
                     self.d_model.zero_grad()
                     real_output = self.d_model(batch_y).view(-1)
-                    #label = self.get_target_tensor(output, True)   #torch.full((b_size,), self.real_label, dtype=torch.float, device=self.device)
-                    #errD_real = self.BCE_loss(output, label)
-                    errD_real = -torch.mean(real_output)
+                    label = self.get_target_tensor(real_output, True)   #torch.full((b_size,), self.real_label, dtype=torch.float, device=self.device)
+                    errD_real = self.BCE_loss(real_output, label)
+                    #errD_real = -torch.mean(real_output)
                     errD_real.backward()
                     # clam pred_y to be between 0 and 255
                     #pred_y = torch.clamp(pred_y, 0, 255)
@@ -160,28 +160,28 @@ class SimVPGAN(Base_method):
                     pred_y, _ = self._predict(batch_x)
                     
                     fake_output = self.d_model(pred_y.detach()).view(-1)
-                    #label = self.get_target_tensor(output, False)
+                    label = self.get_target_tensor(fake_output, False)
                     #label.fill_(self.fake_label)
-                    #errD_fake = self.BCE_loss(output, label)
-                    errD_fake = torch.mean(fake_output)
+                    errD_fake = self.BCE_loss(fake_output, label)
+                    #errD_fake = torch.mean(fake_output)
                     errD_fake.backward()
 
                     errD = errD_real + errD_fake
                     # Update the discriminator
                     self.dmodel_optim.step()
                     #_, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
-                    for p in self.d_model.parameters():
-                        p.data.clamp_(-self.clip_value, self.clip_value)
+                    # for p in self.d_model.parameters():
+                    #     p.data.clamp_(-self.clip_value, self.clip_value)
  
                 self.model.zero_grad()
 
                 gen_output = self.d_model(pred_y).view(-1)
-                #gen_label = self.get_target_tensor(gen_output, True)
-                #gen_loss = self.BCE_loss(gen_output, gen_label)
-                gen_loss = -torch.mean(gen_output)
+                gen_label = self.get_target_tensor(gen_output, True)
+                gen_loss = self.BCE_loss(gen_output, gen_label)
+                #gen_loss = -torch.mean(gen_output)
 
                 # Calculate the reconstruction loss
-                _, total_loss, mse_loss, reg_mse, reg_std, std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                _, total_loss, mse_loss, reg_mse, reg_std, std_loss, sum_loss = self.criterion(pred_y[:,:,0:1,:,:], batch_y[:,:,0:1,:,:], batch_static)
                 recon_loss = sum(self.adapt_weights[i] * loss for i, loss in enumerate([mse_loss, reg_mse, reg_std, std_loss, sum_loss]))
 
                 # Combine losses for the generator update
@@ -274,7 +274,7 @@ class SimVPGAN(Base_method):
                 train_pbar.set_description(log_buffer)
 
             end = time.time()  # end for
-
+            
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
         return num_updates, losses_m, losses_total, losses_mse_m,losses_reg_m,losses_reg_s,losses_std, losses_sum, eta

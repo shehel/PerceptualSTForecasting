@@ -92,9 +92,13 @@ def get_day_of_week(filename):
     date_obj = datetime.strptime(date_str, '%Y-%m-%d')
     return date_obj.strftime("%A")
 
+perm = [[0,1,2,3,4,5,6,7],
+        [2,3,4,5,6,7,0,1],
+        [4,5,6,7,0,1,2,3],
+        [6,7,0,1,2,3,4,5]
+        ]
 class T4CDataset(Dataset):
     """Taxibj <https://arxiv.org/abs/1610.00081>`_ Dataset"""
-
     def __init__(self, 
                  root_dir: str,
                  file_filter: str = None,
@@ -135,6 +139,8 @@ class T4CDataset(Dataset):
             [42, 95],
             [60, 90]
         ])
+
+        self.perm = True
 
     def __len__(self):
         return self.X.shape[0]
@@ -201,6 +207,12 @@ class T4CDataset(Dataset):
         #two_hours = 0 + (two_hours * (20 - 0))
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
+        if self.perm:  
+            dir_select = random.randint(0,3)
+            #dir_select = 2
+    
+            two_hours = two_hours[:,perm[dir_select],:,:]
+
         # TODO
         if self.test:
             random_int_x = 32
@@ -220,14 +232,20 @@ class T4CDataset(Dataset):
         dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
         if dynamic_input[:,4,:,:].max() > 255:
             pdb.set_trace()
-        static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
+        #static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
         #static_ch = static_ch/255
         # get mean of of dynamic input across first axis
-        inp_mean = np.mean(dynamic_input, axis=0)
+        inp_mean = np.mean(dynamic_input[:,0::2], axis=0)
         # remove mean from output data
         #output_data = output_data - inp_mean
-        inp_static_ch = inp_mean[4,:,:]
-        output_data = output_data[:,0::1,:,:]
+        if self.perm:
+            inp_static_ch = inp_mean[0,:,:]
+            output_data = output_data[:,0::1,:,:]
+        else:   
+            output_data = output_data[:,0::1,:,:]
+            inp_static_ch = inp_mean[2,:,:]
+        #inp_static_ch = inp_mean[:,:,:]
+        
         #static_ch = static_ch[0, random_int_x:random_int_x+64, random_int_y:random_int_y+64]
         #static_ch = static_ch/static_ch.sum()
         static_ch = np.zeros((128,128))
@@ -252,7 +270,6 @@ class T4CDataset(Dataset):
 
         # zero out all but a 5x5 patch around 64,64 in static_ch
         #static_ch = static_ch[0,0,59:69,59:69]
-
         return dynamic_input, output_data, static_ch
 
 def train_collate_fn(batch):

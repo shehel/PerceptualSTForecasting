@@ -443,7 +443,7 @@ class DifferentialDivergenceLoss(nn.Module):
         #sum_loss = self.main_loss(true_ratios,predicted_ratios)
         #pred = pred * static_ch
         #true = true * static_ch
-        mse_loss = torch.mean(F.l1_loss(pred, true, reduction='none') * static_ch)
+        mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
         sum_loss = mse_loss
         if train_run==False:
             sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
