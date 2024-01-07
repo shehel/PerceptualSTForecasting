@@ -21,7 +21,7 @@ class SimVPGAN_Model(nn.Module):
     """Defines a PatchGAN discriminator as in Pix2Pix
         --> see https://github.com/junyanz/pytorch-CycleGAN-and-pix2pix/blob/master/models/networks.py
     """
-    def __init__(self, input_nc=96, ndf=64, n_layers=3, use_actnorm=False):
+    def __init__(self, input_nc=12, ndf=64, n_layers=3, use_actnorm=False):
         """Construct a PatchGAN discriminator
         Parameters:
             input_nc (int)  -- the number of channels in input images

@@ -128,12 +128,12 @@ class SimVPGAN(Base_method):
         train_pbar = tqdm(train_loader) if self.rank == 0 else train_loader
 
         end = time.time()
-        for batch_x, batch_y, batch_static in train_pbar:
+        for batch_x, batch_y in train_pbar:
 
             data_time_m.update(time.time() - end)
             
             if not self.args.use_prefetcher:
-                batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
             runner.call_hook('before_train_iter')
 
             b_size = batch_y.size(0)
@@ -181,7 +181,7 @@ class SimVPGAN(Base_method):
                 #gen_loss = -torch.mean(gen_output)
 
                 # Calculate the reconstruction loss
-                _, total_loss, mse_loss, reg_mse, reg_std, std_loss, sum_loss = self.criterion(pred_y[:,:,0:1,:,:], batch_y[:,:,0:1,:,:], batch_static)
+                _, total_loss, mse_loss, reg_mse, reg_std, std_loss, sum_loss = self.criterion(pred_y[:,:,0:1,:,:], batch_y[:,:,0:1,:,:])
                 recon_loss = sum(self.adapt_weights[i] * loss for i, loss in enumerate([mse_loss, reg_mse, reg_std, std_loss, sum_loss]))
 
                 # Combine losses for the generator update

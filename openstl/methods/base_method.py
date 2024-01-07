@@ -263,7 +263,7 @@ class Base_method(object):
                         torch.cuda.empty_cache()
             data_loader.dataset.perm = True
         else:
-            for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
+            for i, (batch_x, batch_y) in enumerate(data_loader):
                 with torch.no_grad():
                     batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
                     pred_y, trend = self._predict(batch_x, batch_y)
@@ -275,11 +275,11 @@ class Base_method(object):
 
 
                 if gather_data:  # return raw datas
-                    results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
-                                            [batch_x[:,:,4:5,:,:].cpu().numpy(),
-                                        pred_y[:,:,4:5,:,:].cpu().numpy(),
-                                        batch_y[:,:,4:5,:,:].cpu().numpy(),
-                                        batch_static.cpu().numpy()])))
+                    results.append(dict(zip(['inputs', 'preds', 'trues'],
+                                            [batch_x[:,:,0:1,:,:].cpu().numpy(),
+                                        pred_y[:,:,0:1,:,:].cpu().numpy(),
+                                        batch_y[:,:,0:1,:,:].cpu().numpy(),
+                                        ])))
                 else:  # return metrics
                     #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
                     #                     data_loader.dataset.mean, data_loader.dataset.std,
@@ -302,12 +302,12 @@ class Base_method(object):
         #results['trues'] = results['trues'][:,0:1,4:5,70,65]
         trues = torch.tensor(results_all['trues'])
         #losses_m = self.criterion_cpu(preds, trues)
-        static_ch = torch.tensor(results_all['static'])
+        
         # set static_ch to be a zeros tensor with shape static_ch.shape
         #static_ch = torch.zeros_like(static_ch)
         #static_ch[:,:,0:1,64,64] = 1
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
-        losses_m= self.criterion(preds[:,:,:], trues[:,:,:], static_ch[:,:,:], train_run=False)
+        losses_m= self.criterion(preds[:,:,:], trues[:,:,:], train_run=False)
         #dilate = self.val_criterion(preds, trues, static_ch)
         results_all["loss"] = losses_m
         _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = losses_m
