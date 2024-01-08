@@ -250,7 +250,7 @@ def load_data(batch_size,
     assert data_split in ['5_625', '2_8125', '1_40625']
     #data_root='./data/'
     try:
-        data_root = cdset.get(dataset_id="3db5889f347f4bb1ba4be90b0062673d").get_local_copy()
+        data_root = cdset.get(dataset_id="15f21d90cff7427493ffc4259405d59f").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
     _dataroot = osp.join(data_root, f'weather_{data_split}deg')

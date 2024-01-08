@@ -28,7 +28,7 @@ class SimVP(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
         self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.adapt_weights = torch.tensor([1,0,0,1,0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []

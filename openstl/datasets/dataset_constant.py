@@ -155,7 +155,7 @@ dataset_parameters = {
         'pre_seq_length': 12,
         'aft_seq_length': 12,
         'total_length': 24,
-        'data_name': 'tp',
+        'data_name': 'tcc',
         'train_time': ['2010', '2015'], 'val_time': ['2016', '2016'], 'test_time': ['2017', '2018'],
         'metrics': ['mse', 'rmse', 'mae'],
     },

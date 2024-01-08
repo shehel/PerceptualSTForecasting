@@ -99,6 +99,7 @@ class MovingMNIST(Dataset):
 
         self.mean = 0
         self.std = 1
+        self.perm = False
 
     def get_random_trajectory(self, seq_length):
         ''' Generate a random sequence of a MNIST digit '''
