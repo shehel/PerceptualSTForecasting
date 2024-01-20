@@ -92,9 +92,13 @@ def get_day_of_week(filename):
     date_obj = datetime.strptime(date_str, '%Y-%m-%d')
     return date_obj.strftime("%A")
 
+perm = [[0,1,2,3,4,5,6,7],
+        [2,3,4,5,6,7,0,1],
+        [4,5,6,7,0,1,2,3],
+        [6,7,0,1,2,3,4,5]
+        ]
 class T4CDataset(Dataset):
     """Taxibj <https://arxiv.org/abs/1610.00081>`_ Dataset"""
-
     def __init__(self, 
                  root_dir: str,
                  file_filter: str = None,
@@ -136,6 +140,8 @@ class T4CDataset(Dataset):
             [60, 90]
         ])
 
+        self.perm = False
+
     def __len__(self):
         return self.X.shape[0]
 
@@ -144,23 +150,24 @@ class T4CDataset(Dataset):
         labels = torch.tensor(self.Y[index, ::]).float()
         return data, labels
 
-    def _load_dataset(self):
+    def _load_dataset(self, set="train"):
         self.file_list = list(Path(self.root_dir).rglob(self.file_filter))
         self.file_list.sort()
-        self.len = len(self.file_list) * MAX_TEST_SLOT_INDEX
         static_list = list(Path(self.root_dir).rglob(self.static_filter))
 
-        self.weekday_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekday_mean.h5")
+        self.weekday_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekday_mean_trainval.h5")
         # float 32
         self.weekday_mean = self.weekday_mean.astype(np.float32)
-        self.weekend_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekend_mean.h5")
+        self.weekend_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekend_mean_trainval.h5")
         self.weekend_mean = self.weekend_mean.astype(np.float32)
         # self.weekday_std = load_h5_file(Path(self.root_dir) / "BERLIN/weekday_std.h5")
         # # float 32da
         # self.weekday_std = self.weekday_std.astype(np.float32)
         # self.weekend_std = load_h5_file(Path(self.root_dir) / "BERLIN/weekend_std.h5")
         # self.weekend_std = self.weekend_std.astype(np.float32)
-
+        if set == "val":
+            self.file_list = self.file_list[-30:]
+        self.len = len(self.file_list) * MAX_TEST_SLOT_INDEX
         for city in static_list:
              self.static_dict[city.parts[-2]] = load_h5_file(city)
         for i, file in enumerate(self.file_list):
@@ -201,6 +208,12 @@ class T4CDataset(Dataset):
         #two_hours = 0 + (two_hours * (20 - 0))
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
+        if self.perm:
+            dir_select = random.randint(0,3)
+            #dir_select = 2
+
+            two_hours = two_hours[:,perm[dir_select],:,:]
+
         # TODO
         if self.test:
             random_int_x = 32
@@ -220,14 +233,20 @@ class T4CDataset(Dataset):
         dynamic_input, output_data = two_hours[:self.pre_seq_length], two_hours[self.pre_seq_length:self.pre_seq_length+self.aft_seq_length]
         if dynamic_input[:,4,:,:].max() > 255:
             pdb.set_trace()
-        static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
+        #static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
         #static_ch = static_ch/255
         # get mean of of dynamic input across first axis
-        inp_mean = np.mean(dynamic_input, axis=0)
+        inp_mean = np.mean(dynamic_input[:,0::2], axis=0)
         # remove mean from output data
         #output_data = output_data - inp_mean
-        inp_static_ch = inp_mean[4,:,:]
-        output_data = output_data[:,0::1,:,:]
+        if self.perm:
+            inp_static_ch = inp_mean[0,:,:]
+            output_data = output_data[:,0::1,:,:]
+        else:
+            output_data = output_data[:,0::1,:,:]
+            inp_static_ch = inp_mean[2,:,:]
+        #inp_static_ch = inp_mean[:,:,:]
+
         #static_ch = static_ch[0, random_int_x:random_int_x+64, random_int_y:random_int_y+64]
         #static_ch = static_ch/static_ch.sum()
         static_ch = np.zeros((128,128))
@@ -252,7 +271,6 @@ class T4CDataset(Dataset):
 
         # zero out all but a 5x5 patch around 64,64 in static_ch
         #static_ch = static_ch[0,0,59:69,59:69]
-
         return dynamic_input, output_data, static_ch
 
 def train_collate_fn(batch):
@@ -274,7 +292,8 @@ def load_data(batch_size, val_batch_size, data_root,
     try:
         #data_root = Dataset.get(dataset_id="20fef9fe5f0b49319a7f380ae16d5d1e").get_local_copy() # berlin_full
         #data_root = Dataset.get(dataset_id="6ecb9b57d2034556829ebeb9c8a99d63").get_local_copy() # berlin_full
-        data_root = Dataset.get(dataset_id="446207d29ccd48368e3a5a3d63d2feaa").get_local_copy()
+        data_root = Dataset.get(dataset_id="0ac6a015bb804f30a092c089fa7b28ea").get_local_copy()
+        #data_root = Dataset.get(dataset_id="446207d29ccd48368e3a5a3d63d2feaa").get_local_copy()
         #data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
@@ -282,12 +301,12 @@ def load_data(batch_size, val_batch_size, data_root,
     val_filter = "**/validation/*8ch.h5"
     test_filter = "**/test/*8ch.h5"
     train_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=False)
-    val_set = T4CDataset(data_root, val_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
+    val_set = T4CDataset(data_root, train_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
     test_set = T4CDataset(data_root, test_filter, pre_seq_length=pre_seq_length, aft_seq_length=aft_seq_length, test=True)
 
 
     train_set._load_dataset()
-    val_set._load_dataset()
+    val_set._load_dataset(set="val")
     test_set._load_dataset()
 
     

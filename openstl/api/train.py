@@ -42,7 +42,7 @@ def get_ani(mat):
     fig, ax = plt.subplots(figsize=(8, 8))
     imgs = []
     for img in mat:
-        img = ax.imshow(img, animated=True, vmax=40, vmin=0)
+        img = ax.imshow(img, animated=True, vmax=30, vmin=0)
         imgs.append([img])
     ani = animation.ArtistAnimation(fig, imgs, interval=1000, blit=True, repeat_delay=3000)
     plt.close()
@@ -580,11 +580,11 @@ class BaseExperiment(object):
         #results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)
         #results["preds"] = np.clip(results["preds"], 0, 255).astype(np.uint8)
 
-        if self._rank == 0:
-            folder_path = osp.join(self.path, 'saved1')
-            check_dir(folder_path)
-            for np_data in ['inputs', 'trues', 'preds']:
-                np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
+        # if self._rank == 0:
+        #     folder_path = osp.join(self.path, 'saved1')
+        #     check_dir(folder_path)
+        #     for np_data in ['inputs', 'trues', 'preds']:
+        #         np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 
         return None
 

@@ -443,12 +443,20 @@ class DifferentialDivergenceLoss(nn.Module):
         #sum_loss = self.main_loss(true_ratios,predicted_ratios)
         #pred = pred * static_ch
         #true = true * static_ch
-        mse_loss = torch.mean(F.l1_loss(pred, true, reduction='none') * static_ch)
+        mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
         sum_loss = mse_loss
         if train_run==False:
             sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
+            # sampled_true is of shape 288, 12, 1. I want to z-normalize each of the 288 rows by removing the mean and dividing by std
+            # sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
+            # sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
             reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
         else:
+            # sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
+            # sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
+            # sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
+            # reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
+
             reg_mse = mse_loss
             reg_std = mse_loss
         #pred_prob = F.softmax(sum_1, dim=1)

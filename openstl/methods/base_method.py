@@ -213,39 +213,86 @@ class Base_method(object):
             results_all (dict(np.ndarray)): The concatenated outputs.
         """
         # preparation
+        perm = [[0,1,2,3,4,5,6,7],
+        [2,3,4,5,6,7,0,1],
+        [4,5,6,7,0,1,2,3],
+        [6,7,0,1,2,3,4,5]
+        ]
         results = []
         prog_bar = ProgressBar(len(data_loader))
         length = len(data_loader.dataset) if length is None else length
-        for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
-            with torch.no_grad():
-                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                pred_y, trend = self._predict(batch_x, batch_y)
-                #assert pred_y.shape == batch_y.shape
-                #assert trend.shape == batch_y.shape
-                #pred_y = pred_y + trend
-                
-                
+        eval_res = []
+
+        if data_loader.dataset.perm:
+            data_loader.dataset.perm = False
+            for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
+                    #pred_y = torch.zeros_like(batch_y)
+
+                    for x in range(2,3):
+                        with torch.no_grad():
+
+                            batch_x, batch_y= batch_x.to(self.device), batch_y.to(self.device)
+                            batch_x_p = batch_x[:,:,perm[x],:,:]
+                            batch_y_p = batch_y[:,:,4:5,:,:]
+                            pred_y, trend = self._predict(batch_x_p, batch_y_p)
+                    #assert pred_y.shape == batch_y.shape
+                    #assert trend.shape == batch_y.shape
+                    #pred_y = pred_y + trend
 
 
-            if gather_data:  # return raw datas
-                results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
-                                        [batch_x[:,:,4:5,:,:].cpu().numpy(),
-                                     pred_y[:,:,4:5,:,:].cpu().numpy(),
-                                     batch_y[:,:,4:5,:,:].cpu().numpy(),
-                                     batch_static.cpu().numpy()])))
-            else:  # return metrics
-                #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
-                #                     data_loader.dataset.mean, data_loader.dataset.std,
-                #                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
-                eval_res = {}
-                eval_res['train_loss'],eval_res['total_loss'],eval_res['mse'],eval_res['div'],eval_res['div_std'],eval_res['std'], eval_res['sum'] = self.criterion(pred_y, batch_y)
-                for k in eval_res.keys():
-                    eval_res[k] = eval_res[k].cpu().numpy().reshape(1)
-                results.append(eval_res)
 
-            prog_bar.update()
-            if self.args.empty_cache:
-                torch.cuda.empty_cache()
+
+                    if gather_data:  # return raw datas
+                        results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
+                                                [batch_x_p[:,:,0:1,:,:].cpu().numpy(),
+                                                pred_y[:,:,0:1,:,:].cpu().numpy(),
+                                                batch_y_p[:,:,0:1,:,:].cpu().numpy(),
+                                                batch_static.cpu().numpy()])))
+                    else:  # return metrics
+                        #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
+                        #                     data_loader.dataset.mean, data_loader.dataset.std,
+                        #                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
+                        eval_res = {}
+                        eval_res['train_loss'],eval_res['total_loss'],eval_res['mse'],eval_res['div'],eval_res['div_std'],eval_res['std'], eval_res['sum'] = self.criterion(pred_y, batch_y)
+                        for k in eval_res.keys():
+                            eval_res[k] = eval_res[k].cpu().numpy().reshape(1)
+                        results.append(eval_res)
+
+                    prog_bar.update()
+                    if self.args.empty_cache:
+                        torch.cuda.empty_cache()
+            data_loader.dataset.perm = True
+        else:
+            for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
+                with torch.no_grad():
+                    batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+                    pred_y, trend = self._predict(batch_x, batch_y)
+                    #assert pred_y.shape == batch_y.shape
+                    #assert trend.shape == batch_y.shape
+                    #pred_y = pred_y + trend
+
+
+
+
+                if gather_data:  # return raw datas
+                    results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
+                                            [batch_x[:,:,4:5,:,:].cpu().numpy(),
+                                        pred_y[:,:,4:5,:,:].cpu().numpy(),
+                                        batch_y[:,:,4:5,:,:].cpu().numpy(),
+                                        batch_static.cpu().numpy()])))
+                else:  # return metrics
+                    #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
+                    #                     data_loader.dataset.mean, data_loader.dataset.std,
+                    #                     metrics=self.metric_list, spatial_norm=self.spatial_norm, return_log=False)
+                    eval_res = {}
+                    eval_res['train_loss'],eval_res['total_loss'],eval_res['mse'],eval_res['div'],eval_res['div_std'],eval_res['std'], eval_res['sum'] = self.criterion(pred_y, batch_y)
+                    for k in eval_res.keys():
+                        eval_res[k] = eval_res[k].cpu().numpy().reshape(1)
+                    results.append(eval_res)
+
+                prog_bar.update()
+                if self.args.empty_cache:
+                    torch.cuda.empty_cache()
 
         # post gather tensors
         results_all = {}
@@ -257,7 +304,7 @@ class Base_method(object):
         #losses_m = self.criterion_cpu(preds, trues)
         static_ch = torch.tensor(results_all['static'])
         # set static_ch to be a zeros tensor with shape static_ch.shape
-        static_ch = torch.zeros_like(static_ch)
+        #static_ch = torch.zeros_like(static_ch)
         #static_ch[:,:,0:1,64,64] = 1
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
         losses_m= self.criterion(preds[:,:,:], trues[:,:,:], static_ch[:,:,:], train_run=False)

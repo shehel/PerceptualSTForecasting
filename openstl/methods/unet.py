@@ -183,18 +183,18 @@ class UNet(Base_method):
             #         self.component_5.append(sum_loss.item())
             # self.iter += 1
 
-
-            if self.loss_scaler is not None:
-                if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
-                    raise ValueError("Inf or nan loss value. Please use fp32 training!")
-                self.loss_scaler(
-                    loss, self.model_optim,
-                    clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
-                    parameters=self.model.parameters())
-            else:
-                loss.backward()
-                self.clip_grads(self.model.parameters())
-                self.model_optim.step()
+            if epoch != 0:
+                if self.loss_scaler is not None:
+                    if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
+                        raise ValueError("Inf or nan loss value. Please use fp32 training!")
+                    self.loss_scaler(
+                        loss, self.model_optim,
+                        clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
+                        parameters=self.model.parameters())
+                else:
+                    loss.backward()
+                    self.clip_grads(self.model.parameters())
+                    self.model_optim.step()
 
             torch.cuda.synchronize()
             num_updates += 1

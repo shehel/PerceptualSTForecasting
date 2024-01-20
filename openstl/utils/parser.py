@@ -79,7 +79,7 @@ def create_parser():
                         help='Whether to allow overwriting the provided config file with args')
 
     # Training parameters (optimizer)
-    parser.add_argument('--epoch', '-e', default=75, type=int, help='end epochs')
+    parser.add_argument('--epoch', '-e', default=50, type=int, help='end epochs')
     parser.add_argument('--log_step', default=1, type=int, help='Log interval by step')
     parser.add_argument('--opt', default='adam', type=str, metavar='OPTIMIZER',
                         help='Optimizer (default: "adam"')
@@ -134,7 +134,7 @@ def default_parser():
         'use_gpu': True,
         'fp16': False,
         'torchscript': False,
-        'seed': 42,
+        'seed': 100,
         'diff_seed': False,
         'fps': False,
         'empty_cache': True,
