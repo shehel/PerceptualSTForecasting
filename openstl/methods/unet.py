@@ -97,8 +97,26 @@ class UNet(Base_method):
                 #encoded = self.model.encode(batch_y)
                 #recon = self.model.recon(batch_x)
                 #mse_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]], batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
-                #loss, total_loss, mse_loss,mse_div,std_div,reg_loss, sum_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,0:1,:,:], batch_y[:,:,4:5,:,:], batch_static)
+                #mse_loss = F.mse_loss(pred_y[:,:,2:3,52,76], batch_y[:,:,4:5,52,76])
+                #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
+                #recon_loss = loss
+                #encoded_norms = loss
+
+                pred_y, _ = self._predict(batch_x, batch_y)
+                # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:], batch_y[:,:,4:5,], batch_static[:,:,:,])
+
+                self.model.zero_grad()
+                #label.fill_(self.real_label)  # fake labels are real for generator cost
+                # Since we just updated D, perform another forward pass of all-fake batch through D
+                # Update G
+                #self.model_optim.step()
+                #loss = (self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss)
+                #loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                loss = (self.adapt_weights[0] * mse_loss) + ((1- self.adapt_weights[0]) * sum_loss)
+                #loss.backward()
+                #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
+                #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
                 #latent_loss = F.mse_loss(encoded, translated)
                 #mse_loss = latent_loss
                 loss = F.mse_loss(pred_y[:,:,0:1,64,64], batch_y[:,:,4:5,64,64])
@@ -150,17 +168,18 @@ class UNet(Base_method):
 
                 # self.iter += 1
 
-            if self.loss_scaler is not None:
-                if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
-                    raise ValueError("Inf or nan loss value. Please use fp32 training!")
-                self.loss_scaler(
-                    loss, self.model_optim,
-                    clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
-                    parameters=self.model.parameters())
-            else:
-                loss.backward()
-                self.clip_grads(self.model.parameters())
-                self.model_optim.step()
+            if epoch != 0:
+                if self.loss_scaler is not None:
+                    if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
+                        raise ValueError("Inf or nan loss value. Please use fp32 training!")
+                    self.loss_scaler(
+                        loss, self.model_optim,
+                        clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
+                        parameters=self.model.parameters())
+                else:
+                    loss.backward()
+                    self.clip_grads(self.model.parameters())
+                    self.model_optim.step()
 
             torch.cuda.synchronize()
             num_updates += 1

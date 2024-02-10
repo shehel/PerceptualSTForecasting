@@ -58,6 +58,9 @@ def create_binary_mask(frame, epsilon=1e-5):
     return mask.astype(int)
 
 def find_largest(matrix, topk):
+    # doubt this works
+    # seed reset every time for determinism
+    np.random.seed(40)
     # Flatten the matrix to a 1D array
     flat_matrix = matrix.flatten()
 
@@ -65,16 +68,44 @@ def find_largest(matrix, topk):
     flattened = matrix.flatten()
     sorted_indices = np.argsort(-np.abs(flattened))  # Sort by magnitude, descending
 
+    sort_lim = int(topk/0.25)
     # Step 3: Select top 1000 largest indices
-    top_indices = sorted_indices[:topk]
+    top_indices = sorted_indices[:sort_lim]
 
     # Step 4: Randomly sample 500 from top 1000 indices
-    random_500_indices = np.random.choice(top_indices, 20, replace=False)
-
+    random_500_indices = np.random.choice(top_indices, topk, replace=False)
+    #random_500_indices = top_indices[:topk]
     # Step 5: Create the mask
     mask = np.zeros_like(matrix)
     np.put(mask, random_500_indices, 1)
     return mask
+
+# def find_largest(matrix, topk):
+#     """
+#     Create a mask of 1s and 0s where the topk values in the matrix are set to 1 and the rest to 0.
+
+#     Parameters:
+#         matrix (numpy.ndarray): Input 128x128 matrix.
+#         topk (int): The number of highest values to be set to 1 in the mask.
+
+#     Returns:
+#         numpy.ndarray: A mask of the same shape as the input matrix with topk values set to 1 and the rest to 0.
+#     """
+#     # Flatten the matrix and get the indices of the topk values
+#     flat_matrix = matrix.flatten()
+#     top_indices = np.argpartition(-flat_matrix, topk)[:topk]
+
+#     # Create a mask with all zeros
+#     mask = np.zeros_like(flat_matrix)
+
+#     # Set the topk indices to 1
+#     mask[top_indices] = 1
+#     pdb.set_trace()
+#     # Reshape the mask to the original matrix shape
+#     mask = mask.reshape(matrix.shape)
+
+#     return mask
+
 def activate_code(probability):
     """
     Activate a piece of code with a defined probability using Bernoulli sampling from scipy.
@@ -92,9 +123,13 @@ def get_day_of_week(filename):
     date_obj = datetime.strptime(date_str, '%Y-%m-%d')
     return date_obj.strftime("%A")
 
+perm = [[0,1,2,3,4,5,6,7],
+        [2,3,4,5,6,7,0,1],
+        [4,5,6,7,0,1,2,3],
+        [6,7,0,1,2,3,4,5]
+        ]
 class T4CDataset(Dataset):
     """Taxibj <https://arxiv.org/abs/1610.00081>`_ Dataset"""
-
     def __init__(self, 
                  root_dir: str,
                  file_filter: str = None,
@@ -125,6 +160,8 @@ class T4CDataset(Dataset):
         self.file_list = []
         self.probability = 0.07
 
+        self.perm = False
+
     def __len__(self):
         return self.X.shape[0]
 
@@ -133,22 +170,27 @@ class T4CDataset(Dataset):
         labels = torch.tensor(self.Y[index, ::]).float()
         return data, labels
 
-    def _load_dataset(self):
+    def _load_dataset(self, set="train"):
         self.file_list = list(Path(self.root_dir).rglob(self.file_filter))
         self.file_list.sort()
         self.len = len(self.file_list) * MAX_TEST_SLOT_INDEX
         static_list = list(Path(self.root_dir).rglob(self.static_filter))
 
-        self.weekday_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekday_mean.h5")
+        self.weekday_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekday_mean_trainval.h5")
         # float 32
         self.weekday_mean = self.weekday_mean.astype(np.float32)
-        self.weekend_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekend_mean.h5")
+        self.weekend_mean = load_h5_file(Path(self.root_dir) / "BERLIN/weekend_mean_trainval.h5")
         self.weekend_mean = self.weekend_mean.astype(np.float32)
         for city in static_list:
              self.static_dict[city.parts[-2]] = load_h5_file(city)
-        # for i, file in enumerate(self.file_list):
-        #      self.file_data.append(load_h5_file(file))
-
+        for i, file in enumerate(self.file_list):
+             self.file_data.append(load_h5_file(file).astype(np.float32))
+        last_city = load_h5_file(self.file_list[-1]).astype(np.float32)
+        inp_mean = np.mean(last_city[:,:,:,0::2], axis=0)[:,:,2]
+        # expand inp_mean to have shape [1,128,128]
+        inp_mean = inp_mean[np.newaxis,:,:]
+        
+        self.static_dict[self.file_list[-1].parts[-3]] = inp_mean
 
     def _load_h5_file(self, fn, sl):
         return load_h5_file(fn, sl=sl)
@@ -183,6 +225,12 @@ class T4CDataset(Dataset):
         #two_hours = 0 + (two_hours * (20 - 0))
         two_hours = np.transpose(two_hours, (0, 3, 1, 2))
 
+        if self.perm:
+            dir_select = random.randint(0,3)
+            #dir_select = 2
+
+            two_hours = two_hours[:,perm[dir_select],:,:]
+
         # TODO
         if self.test:
             random_int_x = 312
@@ -204,24 +252,37 @@ class T4CDataset(Dataset):
         static_ch = self.static_dict[self.file_list[file_idx].parts[-3]]
         #static_ch = static_ch/255
         # get mean of of dynamic input across first axis
-        inp_mean = np.mean(dynamic_input, axis=0)
+        #inp_mean = np.mean(dynamic_input[:,0::2], axis=0)
         # remove mean from output data
-        output_data = output_data - inp_mean
-        #static_ch = inp_mean[4,:,:]
-        output_data = output_data[:,0::1,:,:]
-        static_ch = static_ch[0]#, random_int_x:random_int_x+128, random_int_y:random_int_y+128]
-        static_ch = static_ch/static_ch.sum()
-        #static_ch = np.ones((128,128))
+        #output_data = output_data - inp_mean
+        if self.perm:
+            inp_static_ch = inp_mean[0,:,:]
+            output_data = output_data[:,0::1,:,:]
+        else:
+            output_data = output_data[:,0::1,:,:]
+            #inp_static_ch = inp_mean[2,:,:]
+            inp_static_ch = static_ch[0,:,:]
+        #inp_static_ch = inp_mean[:,:,:]
+
+        #static_ch = static_ch[0, random_int_x:random_int_x+64, random_int_y:random_int_y+64]
+        #static_ch = static_ch/static_ch.sum()
+        static_ch = np.zeros((128,128))
+        static_ch[64-32:64+32,64-32:64+32] = inp_static_ch[64-32:64+32,64-32:64+32]
+        static_ch = np.abs(static_ch)
+        #pxs = 500
         if self.test:
-            #static_ch = np.where(static_ch > 0, 1,0)
+            # static_ch_m = find_largest(static_ch, pxs)
+            # static_ch = static_ch * static_ch_m
+            static_ch = np.where(static_ch > 0, 1,0)
             a = 1
         else:
-            #static_ch = find_largest(inp_mean[4], 1000)
-            #static_ch = np.where(static_ch > 0, 1,0)
+            # static_ch_m = find_largest(static_ch, pxs)
+            # static_ch = static_ch * static_ch_m
+            static_ch = np.where(static_ch > 0, 1,0)
             a = 1
 
-
-        #static_ch[64,64] = 1
+        
+        static_ch[self.pixel_list[:, 0], self.pixel_list[:, 1]] = 1
         static_ch = static_ch[np.newaxis, np.newaxis, :, :]
         
 
@@ -233,7 +294,6 @@ class T4CDataset(Dataset):
 
         # zero out all but a 5x5 patch around 64,64 in static_ch
         #static_ch = static_ch[0,0,59:69,59:69]
-
         return dynamic_input, output_data, static_ch
 
 def train_collate_fn(batch):
@@ -256,7 +316,8 @@ def load_data(batch_size, val_batch_size, data_root,
     try:
         #data_root = Dataset.get(dataset_id="20fef9fe5f0b49319a7f380ae16d5d1e").get_local_copy() # berlin_full
         #data_root = Dataset.get(dataset_id="6ecb9b57d2034556829ebeb9c8a99d63").get_local_copy() # berlin_full
-        data_root = Dataset.get(dataset_id="75bf6ceb016c4231b03dbc4c11677ee0").get_local_copy()
+        data_root = Dataset.get(dataset_id="0ac6a015bb804f30a092c089fa7b28ea").get_local_copy()
+        #data_root = Dataset.get(dataset_id="446207d29ccd48368e3a5a3d63d2feaa").get_local_copy()
         #data_root = Dataset.get(dataset_id="efd30aa3795f4f498fb4f966a4aec93b").get_local_copy()
     except:
         print("Could not find dataset in clearml server. Exiting!")
