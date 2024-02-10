@@ -307,7 +307,7 @@ class Base_method(object):
         #static_ch = torch.zeros_like(static_ch)
         #static_ch[:,:,0:1,64,64] = 1
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
-        losses_m= self.criterion(preds, trues, static_ch)
+        losses_m= self.criterion(preds[:,:,:], trues[:,:,:], static_ch[:,:,:], train_run=False)
         #dilate = self.val_criterion(preds, trues, static_ch)
         results_all["loss"] = losses_m
         _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = losses_m

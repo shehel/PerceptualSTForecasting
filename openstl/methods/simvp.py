@@ -28,7 +28,7 @@ class SimVP(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
         self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1,0,0,1,0])
+        self.adapt_weights = torch.tensor([1,0,0,0,0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -99,7 +99,7 @@ class SimVP(Base_method):
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
-                pred_y, translated = self._predict(batch_x)
+                pred_y, _ = self._predict(batch_x)
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
                 #encoded = self.model.encode(batch_y)

@@ -418,12 +418,23 @@ class BaseExperiment(object):
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
 
+        #x_values = range(len(results['trues'][19, :, 0, 32, 32]))
         x_values = range(len(results['trues'][19, :, 0, 64, 64]))
         shifted_x_values = [x - shift_amount for x in x_values]  # Shift x-values for 'inputs'
 
         # Define the list of pixel coordinates
-        pixel_list = [(64, 64), (51, 56), (51, 40)]
-
+        #pixel_list = [(32, 32), (19, 24), (19, 12)]
+        #pixel_list = [(64, 64), (51, 56), (51, 40)]
+        #pixel_list = [(64, 64), (64, 65), (66, 92), (53, 46), (62, 49), (76, 90), (35, 45), (36, 65), (56, 46), (58, 69), (44, 95), (89, 81)]
+        pixel_list = [(64, 64),
+            (64, 65),
+            (36, 83),
+            (63, 86),
+            (67, 94),
+            (58, 49),
+            (50, 37),
+            (42, 95),
+            (60, 90)]
         # Iterate over each time step for which we want to visualize the data
         for i in [10, 50, 100, 150]:
             # Iterate over each pixel coordinate
@@ -441,15 +452,15 @@ class BaseExperiment(object):
 
                 # Log the figure using the logger for the specific pixel and time step
                 logger.report_matplotlib_figure(
-                    f"px_{pixel}_{i}",
-                    "true and pred",
+                    f"ts_{i}",
+                    f"px_{pixel}",
                     iteration=epoch,
                     figure=fig,
                     report_image=True,
                     report_interactive=True
                 )
             # After plotting for all pixels at the current time step, close the plot to avoid overlap
-            plt.close()
+                plt.close()
 
         # The second part of the visualization seems to be a time series plot for the first pixel.
         # If similar time series plots are required for all pixels, iterate over the pixel list:
@@ -546,7 +557,7 @@ class BaseExperiment(object):
 
         return eval_res['mse']
 
-    def inference(self, best_model=True):
+    def inference(self, best_model=False):
         """A inference loop of STL methods"""
         if best_model:
             best_model_path = osp.join(self.path, 'checkpoint.pth')
@@ -561,13 +572,13 @@ class BaseExperiment(object):
         
         self.call_hook('after_val_epoch')
         inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
-        results["trues"] = (results["trues"]+inp_mean)
-        results["preds"] = (results["preds"]+np.expand_dims(inp_mean, axis=1))
-        results["inputs"] = (results["inputs"]).astype(np.uint8)
+        results["trues"] = (results["trues"])
+        results["preds"] = (results["preds"])
+        results["inputs"] = (results["inputs"])
 
         # clamp trues and preds to be between 0 and 255 and convert to uint8
-        results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)
-        results["preds"] = np.clip(results["preds"], 0, 255).astype(np.uint8)
+        #results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)
+        #results["preds"] = np.clip(results["preds"], 0, 255).astype(np.uint8)
 
         # if self._rank == 0:
         #     folder_path = osp.join(self.path, 'saved1')

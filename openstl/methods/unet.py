@@ -2,16 +2,19 @@ import time
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 from tqdm import tqdm
 from timm.utils import AverageMeter
 
-from openstl.models import UNet_Model
+from openstl.models import SimVP_Model, UNet_Model, UNetQ_Model
 from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
 from .base_method import Base_method
-import pdb
+from openstl.core.optim_scheduler import get_optim_scheduler
 
 from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
+import pdb
+import math
+
+
 class UNet(Base_method):
     r"""SimVP
 
@@ -23,14 +26,14 @@ class UNet(Base_method):
     def __init__(self, args, device, steps_per_epoch):
         Base_method.__init__(self, args, device, steps_per_epoch)
         self.model = self._build_model(self.config)
-        self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
+        self.model_optim, self.scheduler, self.by_epoch= self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
-        self.loss_wgt = torch.tensor(1)
         self.criterion = DifferentialDivergenceLoss()
-        self.val_criterion = DilateLoss()
-        self.adapt_object = LossWeightedSoftAdapt(beta=1.5)
-        self.iters_to_make_updates = 100
+        # set 1 to be a torch.tensor and move it to gpu
+        self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
+        self.iters_to_make_updates = 70
         self.adapt_weights = torch.tensor([1,0,0,0,0])
+
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -38,15 +41,29 @@ class UNet(Base_method):
         self.component_5 = []
         self.iter = 0
 
-    def _build_model(self, config):
-        return UNet_Model(**config).to(self.device)
 
-    def _predict(self, batch_x, batch_y=None, **kwargs):
+    def _init_optimizer(self, steps_per_epoch):
+        opt_gen, sched_gen, epoch_gen = get_optim_scheduler(
+            self.args, self.args.epoch, self.model, steps_per_epoch)
+        return opt_gen, sched_gen, epoch_gen
+    def _build_model(self, args):
+        resid_model = UNet_Model(**args).to(self.device)
+        return resid_model
+
+    def _predict(self, batch_x, batch_y=None, test=False, **kwargs):
         """Forward the model"""
-
-        # move axis from source=4 to destination=2 for the batch_x torch tensor
         if self.args.aft_seq_length == self.args.pre_seq_length:
-            pred_y, translated = self.model(batch_x)
+            # if test==True:
+            #     pdb.set_trace()
+            # without taking grad, run batch_x through self.d_model
+            # with torch.no_grad():
+            #     trend, _ = self.d_model(batch_x)
+            # assert shape of trend is same as shape of batch_y
+            #assert trend.shape == batch_y.shape
+
+            #resid = batch_y[:,:] - trend
+
+            pred_y, _ = self.model(batch_x)
         elif self.args.aft_seq_length < self.args.pre_seq_length:
             pred_y, translated = self.model(batch_x)
             pred_y = pred_y[:, :self.args.aft_seq_length]
@@ -65,7 +82,7 @@ class UNet(Base_method):
                 pred_y.append(cur_seq[:, :m])
             
             pred_y = torch.cat(pred_y, dim=1)
-        return pred_y, translated
+        return pred_y, pred_y
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
@@ -84,18 +101,26 @@ class UNet(Base_method):
 
         end = time.time()
         for batch_x, batch_y, batch_static in train_pbar:
+
             data_time_m.update(time.time() - end)
+
+
             self.model_optim.zero_grad()
 
             if not self.args.use_prefetcher:
                 batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
-                batch_x.requires_grad = True
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
-                pred_y, translated = self._predict(batch_x)
+
+
+                # clam pred_y to be between 0 and 255
+                #pred_y = torch.clamp(pred_y, 0, 255)
                 #encoded = self.model.encode(batch_y)
                 #recon = self.model.recon(batch_x)
+                #reg_loss = self.criterion(torch.std(pred_y[:,:,2:3,:,:], dim=1)*batch_static[:,0], torch.std(batch_y[:,:,4:5,:,:], dim=1)*batch_static[:,0])
+                #reg_loss = torch.tensor(0)#self.criterion(translated, encoded)
+                #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
                 #mse_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]], batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
                 #mse_loss = F.mse_loss(pred_y[:,:,2:3,52,76], batch_y[:,:,4:5,52,76])
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
@@ -118,55 +143,45 @@ class UNet(Base_method):
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
                 #latent_loss = F.mse_loss(encoded, translated)
-                #mse_loss = latent_loss
-                loss = F.mse_loss(pred_y[:,:,0:1,64,64], batch_y[:,:,4:5,64,64])
-                #self.adapt_weights[2] * std_div + (1-self.adapt_weights[2]) * mse_div
 
-                #loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss
+
+
+                #loss = latent_loss + recon_loss + encoded_norms
+
                 #loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]],
-                #                         j                                batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
-                #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
-                #recon_loss = F.mse_loss(recon, batch_x[:,:,0::2])
-
-                #loss = latent_loss + loss
-                # take loss of pred_y[:,:,1:3,:,:] and batch_y[:,:,4:5,:,:] but multiply both by batch_static[np.newaxis, np.newaxis, :, :, :]
-                #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
-                #mse_loss = self.criterion(pred_y[:,:,2:3,:,:]*batch_static, batch_y[:,:,4:5,:,:]*batch_static)
-                # get tandard deviation of pred_y[:,:,2:3,:,:] and batch_y[:,:,4:5,:,:] over the first axis and get their MSE
-                #reg_loss = self.criterion(torch.std(pred_y[:,:,2:3,:,:], dim=1), torch.std(batch_y[:,:,4:5,:,:], dim=1))
-                #reg_loss = self.criterion(torch.std(pred_y[:,:,2:3,52,76], dim=1), torch.std(batch_y[:,:,4:5,52,76], dim=1))
+                #                                                         batch_y[:,:,4:5,[52,83,63,42],[76,104,14,63]])
                 #mse_loss = self.criterion(pred_y[:,:,2:3,:,:], batch_y[:,:,4:5,:,:])
+                #mse_loss = mse_loss.mean()
                 #mse_loss = self.criterion(pred_y, batch_y[:,:,0::2])
-                #reg_loss = torch.tensor(0)#self.criterion(translated, encoded)
-                # gradients = torch.autograd.grad(pred_y, batch_x, grad_outputs=torch.ones_like(pred_y), create_graph=True, retain_graph=True)
-                #loss, mse_loss, reg_loss = self.criterion(gradients, pred_y- batch_x)]
-                
-                # reg_loss = self.criterion(gradients[0][:,:,0::2], (pred_y-batch_x[:,:,0::2]))
-                #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
+                #reg_loss = self.criterion(translated, encoded)
 
-                # self.component_1.append(mse_loss.item())
-                # self.component_2.append(mse_div.item())
-                # self.component_3.append(std_div.item())
-                # self.component_4.append(reg_loss.item())
-                # self.component_5.append(sum_loss.item())
-                # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
-                #     try:
-                #         self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1[-70:]),torch.tensor(self.component_2[-70:]),torch.tensor(self.component_3[-70:]),torch.tensor(self.component_4[-70:]),torch.tensor(self.component_5[-70:]),verbose=False)
-                #     except:
-                #         print ("FAILURE in softadapt")
-                #         pdb.set_trace()
-                #     self.component_1 = []
-                #     self.component_2 = []
-                #     self.component_3 = []
-                #     self.component_4 = []
-                #     self.component_5 = []
-                #     self.component_1.append(mse_loss.item())
-                #     self.component_2.append(mse_div.item())
-                #     self.component_3.append(std_div.item())
-                #     self.component_4.append(reg_loss.item())
-                #     self.component_5.append(sum_loss.item())
 
-                # self.iter += 1
+            #     self.component_1.append(mse_loss.item())
+            #     self.component_2.append(mse_div.item())
+            #     self.component_3.append(std_div.item())
+            #     self.component_4.append(reg_loss.item())
+            #     self.component_5.append(sum_loss.item())
+            # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
+            #         try:
+            #             #self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1[-71:]),torch.tensor(self.component_2[-71:]),torch.tensor(self.component_3[-71:]),torch.tensor(self.component_4[-71:]),torch.tensor(self.component_5[-71:]),verbose=True)
+            #             self.adapt_weights = self.adapt_object.get_component_weights(torch.tensor(self.component_1),torch.tensor(self.component_2),torch.tensor(self.component_3),torch.tensor(self.component_4),torch.tensor(self.component_5),verbose=True)
+            #             # print elements in self.adapt weights after rounding it to nearest 2 decimal places
+            #             print ("adapt weights: ", torch.round(self.adapt_weights*100)/100)
+
+            #         except:
+            #             print ("FAILURE in softadapt")
+            #             pdb.set_trace()
+            #         self.component_1 = []
+            #         self.component_2 = []
+            #         self.component_3 = []
+            #         self.component_4 = []
+            #         self.component_5 = []
+            #         self.component_1.append(mse_loss.item())
+            #         self.component_2.append(mse_div.item())
+            #         self.component_3.append(std_div.item())
+            #         self.component_4.append(reg_loss.item())
+            #         self.component_5.append(sum_loss.item())
+            # self.iter += 1
 
             if epoch != 0:
                 if self.loss_scaler is not None:
@@ -205,7 +220,7 @@ class UNet(Base_method):
             if self.rank == 0:
                 log_buffer = 'train loss: {:.4f}'.format(loss.item())
                 log_buffer += ' | train mse loss: {:.4f}'.format(mse_loss.item())
-                log_buffer += ' | train reg loss: {:.4f}'.format(reg_mse.item())
+                log_buffer += ' | train reg loss: {:.4f}'.format(std_loss.item())
                 log_buffer += ' | data time: {:.4f}'.format(data_time_m.avg)
                 train_pbar.set_description(log_buffer)
 
