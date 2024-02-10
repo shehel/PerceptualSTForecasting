@@ -44,7 +44,7 @@ class SimVP(Base_method):
     def _build_model(self, args):
 
         model = SimVP_Model(**args)
-        #model.load_state_dict(torch.load("work_dirs/e1_q28_m16_simconvsc/checkpoints/latest.pth")['state_dict'], strict=False)
+        #model.load_state_dict(torch.load("work_dirs/e2_q7_m1_simconvsc/checkpoint.pth"), strict=False)
         model = model.to(self.device)
         return model
 
@@ -88,6 +88,7 @@ class SimVP(Base_method):
         train_pbar = tqdm(train_loader) if self.rank == 0 else train_loader
 
         end = time.time()
+
         for batch_x, batch_y, batch_static in train_pbar:
 
             data_time_m.update(time.time() - end)
@@ -112,7 +113,8 @@ class SimVP(Base_method):
                 #recon_loss = loss
                 #encoded_norms = loss
                 _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:,:], batch_y[:,:,4:5,:,:], batch_static)
-                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                #loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                loss = (self.adapt_weights[0] * mse_loss) + ((1- self.adapt_weights[0]) * std_loss)
                 #loss = self.adapt_weights[2] * std_div + (1-self.adapt_weights[2]) * (mse_div) + self.adapt_weights[0]*mse_loss
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
@@ -158,18 +160,18 @@ class SimVP(Base_method):
             #         self.component_5.append(sum_loss.item())
             # self.iter += 1
 
-
-            if self.loss_scaler is not None:
-                if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
-                    raise ValueError("Inf or nan loss value. Please use fp32 training!")
-                self.loss_scaler(
-                    loss, self.model_optim,
-                    clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
-                    parameters=self.model.parameters())
-            else:
-                loss.backward()
-                self.clip_grads(self.model.parameters())
-                self.model_optim.step()
+            if epoch != "None":
+                if self.loss_scaler is not None:
+                    if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
+                        raise ValueError("Inf or nan loss value. Please use fp32 training!")
+                    self.loss_scaler(
+                        loss, self.model_optim,
+                        clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
+                        parameters=self.model.parameters())
+                else:
+                    loss.backward()
+                    self.clip_grads(self.model.parameters())
+                    self.model_optim.step()
 
             torch.cuda.synchronize()
             num_updates += 1
@@ -200,7 +202,6 @@ class SimVP(Base_method):
                 train_pbar.set_description(log_buffer)
 
             end = time.time()  # end for
-
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
         return num_updates, losses_m, losses_total, losses_mse_m,losses_reg_m,losses_reg_s,losses_std, losses_sum, eta

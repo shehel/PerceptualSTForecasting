@@ -137,8 +137,8 @@ class UNet(Base_method):
                 # Update G
                 #self.model_optim.step()
                 #loss = (self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss)
-                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
-                #loss = 1-(self.adapt_weights[0] * mse_loss * self.adapt_weights[3] * std_loss * self.adapt_weights[4] * sum_loss)
+                #loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                loss = (self.adapt_weights[0] * mse_loss) + ((1- self.adapt_weights[0]) * sum_loss)
                 #loss.backward()
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
@@ -183,18 +183,18 @@ class UNet(Base_method):
             #         self.component_5.append(sum_loss.item())
             # self.iter += 1
 
-
-            if self.loss_scaler is not None:
-                if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
-                    raise ValueError("Inf or nan loss value. Please use fp32 training!")
-                self.loss_scaler(
-                    loss, self.model_optim,
-                    clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
-                    parameters=self.model.parameters())
-            else:
-                loss.backward()
-                self.clip_grads(self.model.parameters())
-                self.model_optim.step()
+            if epoch != 0:
+                if self.loss_scaler is not None:
+                    if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
+                        raise ValueError("Inf or nan loss value. Please use fp32 training!")
+                    self.loss_scaler(
+                        loss, self.model_optim,
+                        clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
+                        parameters=self.model.parameters())
+                else:
+                    loss.backward()
+                    self.clip_grads(self.model.parameters())
+                    self.model_optim.step()
 
             torch.cuda.synchronize()
             num_updates += 1

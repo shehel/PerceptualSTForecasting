@@ -58,7 +58,7 @@ class SimVP_Model(nn.Module):
         # x, skip = self.enc_s(x)
         # x = x.reshape(B*T, 16*C, 64, 64)
         # embed, skip1 = self.enc_sc(x)
-        x = x_raw.view(B*T, C, H, W)
+        x = x_raw.reshape(B*T, C, H, W)
 
         embed, skip = self.enc(x)
         _, C_, H_, W_ = embed.shape
