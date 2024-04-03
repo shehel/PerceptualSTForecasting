@@ -32,7 +32,7 @@ class UNet(Base_method):
         # set 1 to be a torch.tensor and move it to gpu
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([1,0,0,0,0])
+        self.adapt_weights = torch.tensor([0.6,0,0,0,0.1])
 
         self.component_1 = []
         self.component_2 = []
@@ -138,7 +138,15 @@ class UNet(Base_method):
                 #self.model_optim.step()
                 #loss = (self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss)
                 #loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
-                loss = (self.adapt_weights[0] * mse_loss) + ((1- self.adapt_weights[0]) * sum_loss)
+                #loss = (self.adapt_weights[0] * mse_loss) + ((1- self.adapt_weights[0]) * sum_loss)
+                loss = (
+                        (self.adapt_weights[0] * mse_loss) +
+                            ((1- self.adapt_weights[0]) * (
+                                (self.adapt_weights[-1]*sum_loss)+ ((1-self.adapt_weights[-1])*std_loss)
+                                )
+                            )
+                        )
+
                 #loss.backward()
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])

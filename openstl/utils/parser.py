@@ -94,7 +94,7 @@ def create_parser():
                         help='Clip gradient norm (default: None, no clipping)')
     parser.add_argument('--clip_mode', type=str, default='norm',
                         help='Gradient clipping mode. One of ("norm", "value", "agc")')
-    parser.add_argument('--early_stop_epoch', default=-1, type=int,
+    parser.add_argument('--early_stop_epoch', default=2, type=int,
                         help='Check to early stop after this epoch')
     parser.add_argument('--no_display_method_info', action='store_true', default=False,
                         help='Do not display method info')
@@ -177,7 +177,7 @@ def default_parser():
         'weight_decay': 0,
         'clip_grad': None,
         'clip_mode': 'norm',
-        'early_stop_epoch': -1,
+        'early_stop_epoch': 2,
         'no_display_method_info': False,
         # Training parameters (scheduler)
         'sched': 'onecycle',

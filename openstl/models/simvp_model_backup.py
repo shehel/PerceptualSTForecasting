@@ -22,8 +22,8 @@ class SimVP_Model(nn.Module):
         T, C, H, W = in_shape  # T is pre_seq_length
         H, W = int(H / 2**(N_S/2)), int(W / 2**(N_S/2))  # downsample 1 / 2**(N_S/2)
         act_inplace = False
-        self.enc = Encoder(96, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
-        self.dec = Decoder(hid_T, 96, N_S, spatio_kernel_dec, act_inplace=act_inplace)
+        self.enc = Encoder(C, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
+        self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec, act_inplace=act_inplace)
 
         #self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec)
         # self.enc_s = Encoder(1, 16, 2, spatio_kernel_enc)
@@ -48,7 +48,7 @@ class SimVP_Model(nn.Module):
 
 
         else:
-            self.hid = MidMetaNet(hid_T, hid_T, N_T,
+            self.hid = MidMetaNet(T*hid_S, hid_T, N_T,
                 input_resolution=(H, W), model_type=model_type,
                    mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
 
@@ -58,17 +58,16 @@ class SimVP_Model(nn.Module):
         # x, skip = self.enc_s(x)
         # x = x.reshape(B*T, 16*C, 64, 64)
         # embed, skip1 = self.enc_sc(x)
-        #x = x_raw.reshape(B*T, C, H, W)
-        x = x_raw.reshape(B, C*T, H, W)
+        x = x_raw.reshape(B*T, C, H, W)
+
         embed, skip = self.enc(x)
         _, C_, H_, W_ = embed.shape
 
-        # #z = embed.view(B, T, C_, H_, W_)
+        z = embed.view(B, T, C_, H_, W_)
 
-        #encoded = self.hid(z)
-        encoded = self.hid(embed)
-        #hid = encoded.reshape(B*T, C_, H_, W_)
-        Y = self.dec(encoded, skip)
+        encoded = self.hid(z)
+        hid = encoded.reshape(B*T, C_, H_, W_)
+        Y = self.dec(hid, skip)
         #Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
 
         Y = Y.reshape(B, T, C, H, W)
@@ -166,11 +165,12 @@ class Encoder(nn.Module):
     def __init__(self, C_in, C_hid, N_S, spatio_kernel, act_inplace=True):
         samplings = sampling_generator(N_S)
         super(Encoder, self).__init__()
-        layers = [ConvSC(C_in, C_hid, spatio_kernel, downsampling=samplings[0], act_inplace=act_inplace)]
-        for i, s in enumerate(samplings[1:], 1):
-            layers.append(ConvSC(C_hid, C_hid * 2, spatio_kernel, downsampling=s, act_inplace=act_inplace))
-            C_hid *= 2  # Increase C_hid by 2 for each sampling
-        self.enc = nn.Sequential(*layers)
+        self.enc = nn.Sequential(
+              ConvSC(C_in, C_hid, spatio_kernel, downsampling=samplings[0],
+                     act_inplace=act_inplace),
+            *[ConvSC(C_hid, C_hid, spatio_kernel, downsampling=s,
+                     act_inplace=act_inplace) for s in samplings[1:]]
+        )
 
     def forward(self, x):  # B*4, 3, 128, 128
         enc1 = self.enc[0](x)
@@ -178,26 +178,33 @@ class Encoder(nn.Module):
         for i in range(1, len(self.enc)):
             latent = self.enc[i](latent)
         return latent, enc1
+
+
 class Decoder(nn.Module):
     """3D Decoder for SimVP"""
 
     def __init__(self, C_hid, C_out, N_S, spatio_kernel, act_inplace=True):
         samplings = sampling_generator(N_S, reverse=True)
         super(Decoder, self).__init__()
-        layers = []
-        for i, s in enumerate(samplings[:-1]):
-            layers.append(ConvSC(C_hid, C_hid // 2, spatio_kernel, upsampling=s, act_inplace=act_inplace))
-            C_hid //= 2  # Decrease C_hid by 2 for each sampling
-        layers.append(ConvSC(C_hid, C_out, spatio_kernel, upsampling=samplings[-1], act_inplace=act_inplace))
-        self.dec = nn.Sequential(*layers)
-        self.readout = nn.Conv2d(C_out, C_out, 1)
+        self.dec = nn.Sequential(
+            *[ConvSC(C_hid, C_hid, spatio_kernel, upsampling=s,
+                     act_inplace=act_inplace) for s in samplings[:-1]],
+              ConvSC(C_hid, C_hid, spatio_kernel, upsampling=samplings[-1],
+                     act_inplace=act_inplace)
+        )
+        self.readout = nn.Conv2d(C_hid, C_out, 1)
+        #self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        #self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
 
     def forward(self, hid, enc1=None):
         for i in range(0, len(self.dec)-1):
             hid = self.dec[i](hid)
         Y = self.dec[-1](hid + enc1)
         Y = self.readout(Y)
+        #Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
         return Y
+
+
 class MidIncepNet(nn.Module):
     """The hidden Translator of IncepNet for SimVPv1"""
 
@@ -342,13 +349,13 @@ class MidMetaNet(nn.Module):
         self.enc = nn.Sequential(*enc_layers)
 
     def forward(self, x):
-        #B, T, C, H, W = x.shape
-        #x = x.reshape(B, T*C, H, W)
+        B, T, C, H, W = x.shape
+        x = x.reshape(B, T*C, H, W)
         z = x
         for i in range(self.N2):
             z = self.enc[i](z)
 
-        y = z#.reshape(B, T, C, H, W)
+        y = z.reshape(B, T, C, H, W)
         return y
 
 class Mid3DNet(nn.Module):

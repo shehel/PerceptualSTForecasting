@@ -7,7 +7,63 @@ from openstl.modules import (ConvSC, ConvSC3D, ConvNeXtSubBlock, ConvMixerSubBlo
 
 import pdb
 from einops import rearrange, reduce
-class SimVP_Model(nn.Module):
+class SinusoidalPosEmb(nn.Module):
+    def __init__(self, dim):
+        super().__init__()
+        self.dim = dim
+
+    def forward(self, x):
+        device = x.device
+        half_dim = self.dim // 2
+        emb = math.log(10000) / (half_dim - 1)
+        emb = torch.exp(torch.arange(half_dim, device=device) * -emb)
+        emb = x[:, None] * emb[None, :]
+        emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
+        return emb
+
+class Time_MLP(nn.Module):
+    def __init__(self, dim):
+        super(Time_MLP, self).__init__()
+        self.sinusoidaposemb = SinusoidalPosEmb(dim)
+        self.linear1 = nn.Linear(dim, dim*4)
+        self.gelu = nn.GELU()
+        self.linear2 = nn.Linear(dim*4, dim)
+
+    def forward(self, x):
+        x = self.sinusoidaposemb(x)
+        x = self.linear1(x)
+        x = self.gelu(x)
+        x = self.linear2(x)
+        return x
+
+def stride_generator(N, reverse=False):
+    strides = [1, 2]*10
+    if reverse: return list(reversed(strides[:N]))
+    else: return strides[:N]
+
+    def random_masking(z, mask_ratio=0.75):
+        B, T, C, H, W = z.shape
+        len_keep = int(T * (1. - mask_ratio))
+        noise = torch.rand(B, T, device=z.device)
+        ids_shuffle = torch.argsort(noise, dim=1)
+        mask = torch.ones(B, T, device=z.device)
+        mask.scatter_(1, ids_shuffle[:, :len_keep], 0)
+        mask = mask.bool()
+        z[mask] = 0
+        return z
+    """
+    def random_masking_train(self, z, t):
+        B, T, C , H, W = z.shape
+        for i in range(B):
+            rand_index = random.choices([0,1], weights=[0.5, 0.5], k=10)
+            for index, j in enumerate(rand_index):
+                if j==0:
+                    z[i,index,:,:,:] = self.mask_token[index,:,:,:]
+                if index >= int(t[i]/100):
+                    z[i,index,:,:,:] = self.mask_token[index,:,:,:]
+        return z
+    """ 
+class ARSimVP_Model(nn.Module):
     r"""SimVP Model
 
     Implementation of `SimVP: Simpler yet Better Video Prediction
@@ -22,9 +78,12 @@ class SimVP_Model(nn.Module):
         T, C, H, W = in_shape  # T is pre_seq_length
         H, W = int(H / 2**(N_S/2)), int(W / 2**(N_S/2))  # downsample 1 / 2**(N_S/2)
         act_inplace = False
-        self.enc = Encoder(96, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
-        self.dec = Decoder(hid_T, 96, N_S, spatio_kernel_dec, act_inplace=act_inplace)
-
+        self.enc = Encoder(C, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
+        self.time_mlp = Time_MLP(dim=32)
+        self.lp = Encoder(C, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
+        self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec, act_inplace=act_inplace)
+        #TODO parameters of mask might be off
+        self.mask_token = nn.Parameter(torch.zeros(10, hid_S, 16, 16))
         #self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec)
         # self.enc_s = Encoder(1, 16, 2, spatio_kernel_enc)
         # self.enc_sc = Encoder(16*C, hid_S, 2, spatio_kernel_enc)
@@ -48,38 +107,90 @@ class SimVP_Model(nn.Module):
 
 
         else:
-            self.hid = MidMetaNet(hid_T, hid_T, N_T,
+            self.hid = MidMetaNet(T*hid_S, hid_T, N_T,
                 input_resolution=(H, W), model_type=model_type,
-                   mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+                mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
 
-    def forward(self, x_raw):
-        B, T, C, H, W = x_raw.shape
-        # x = x_raw.reshape(B*T*C, 1, H, W)
-        # x, skip = self.enc_s(x)
-        # x = x.reshape(B*T, 16*C, 64, 64)
-        # embed, skip1 = self.enc_sc(x)
-        #x = x_raw.reshape(B*T, C, H, W)
-        x = x_raw.reshape(B, C*T, H, W)
-        embed, skip = self.enc(x)
-        _, C_, H_, W_ = embed.shape
+    def forward(self, x_raw, y_raw=None, t=None):
+        if is_train = True:
+            B, T, C, H, W = x_raw.shape
+            
+            # x = x_raw.reshape(B*T*C, 1, H, W)
+            # x, skip = self.enc_s(x)
+            # x = x.reshape(B*T, 16*C, 64, 64)
+            # embed, skip1 = self.enc_sc(x)
+            x = x_raw.view(B*T, C, H, W)
+            y = y_raw.view(B*T, C, H, W)
 
-        # #z = embed.view(B, T, C_, H_, W_)
+            time_emb = self.time_mlp(t)
 
-        #encoded = self.hid(z)
-        encoded = self.hid(embed)
-        #hid = encoded.reshape(B*T, C_, H_, W_)
-        Y = self.dec(encoded, skip)
-        #Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
+            
+            embed, skip = self.enc(x)
+            embed_y, _  = self.enc(y)
+            _, C_, H_, W_ = embed.shape
 
-        Y = Y.reshape(B, T, C, H, W)
-        #
+            z = embed.view(B, T, C_, H_, W_)
+            z2 = embed.view(B, T, C_, H_, W_)
 
-        # Y = self.dec_sc(hid, skip1)
-        # Y = Y.reshape(B*T*C, 16, 64, 64)
-        # Y = self.dec_s(Y, skip)
-        # Y = Y.reshape(B, T, C, H, W)
-        # Y = Y[:,:,0::2]
-        return (Y,encoded)
+            z2 = self.random_masking(z2, t)
+            
+            z2 = torch.cat([z, z2], dim=1)
+            
+            encoded = self.hid(z, time_emb)
+            hid = encoded.reshape(B*T, C_, H_, W_)
+            Y = self.dec(hid, skip)
+            Y = Y.reshape(B, T, C, H, W)
+
+            #Y = Y.reshape(B, T, C, H, W)
+            #
+
+            # Y = self.dec_sc(hid, skip1)
+            # Y = Y.reshape(B*T*C, 16, 64, 64)
+            # Y = self.dec_s(Y, skip)
+            # Y = Y.reshape(B, T, C, H, W)
+            # Y = Y[:,:,0::2]
+            return (Y,encoded)
+        else:
+            B, T, C, H, W = x_raw.shape
+            
+            # x = x_raw.reshape(B*T*C, 1, H, W)
+            # x, skip = self.enc_s(x)
+            # x = x.reshape(B*T, 16*C, 64, 64)
+            # embed, skip1 = self.enc_sc(x)
+            x = x_raw.view(B*T, C, H, W)
+            y = y_raw.view(B*T, C, H, W)
+
+            time_emb = self.time_mlp(t)
+
+            
+            embed, skip = self.enc(x)
+            mask_token = self.mask_token.repeat(B,1,1,1,1)
+            _, C_, H_, W_ = embed.shape
+
+            z = embed.view(B, T, C_, H_, W_)
+            z2 = embed.view(B, T, C_, H_, W_)
+
+            z2 = self.random_masking(z2, t)
+            
+            z2 = torch.cat([z, z2], dim=1)
+            
+            encoded = self.hid(z, time_emb)
+            hid = encoded.reshape(B*T, C_, H_, W_)
+            Y = self.dec(hid, skip)
+            Y = Y.reshape(B, T, C, H, W)
+
+            #Y = Y.reshape(B, T, C, H, W)
+            #
+
+            # Y = self.dec_sc(hid, skip1)
+            # Y = Y.reshape(B*T*C, 16, 64, 64)
+            # Y = self.dec_s(Y, skip)
+            # Y = Y.reshape(B, T, C, H, W)
+            # Y = Y[:,:,0::2]
+            return (Y,encoded)
+    
+
+
 
     # def forward(self, x_raw):
     #     try:
@@ -152,7 +263,7 @@ class SimVP_Model(nn.Module):
         _, C_, H_, W_ = embed.shape
 
         z = embed.view(B, T, C_, H_, W_)
-        #z = self.hid(z)
+        z = self.hid(z)
 
         return z
 def sampling_generator(N, reverse=False):
@@ -166,11 +277,12 @@ class Encoder(nn.Module):
     def __init__(self, C_in, C_hid, N_S, spatio_kernel, act_inplace=True):
         samplings = sampling_generator(N_S)
         super(Encoder, self).__init__()
-        layers = [ConvSC(C_in, C_hid, spatio_kernel, downsampling=samplings[0], act_inplace=act_inplace)]
-        for i, s in enumerate(samplings[1:], 1):
-            layers.append(ConvSC(C_hid, C_hid * 2, spatio_kernel, downsampling=s, act_inplace=act_inplace))
-            C_hid *= 2  # Increase C_hid by 2 for each sampling
-        self.enc = nn.Sequential(*layers)
+        self.enc = nn.Sequential(
+              ConvSC(C_in, C_hid, spatio_kernel, downsampling=samplings[0],
+                     act_inplace=act_inplace),
+            *[ConvSC(C_hid, C_hid, spatio_kernel, downsampling=s,
+                     act_inplace=act_inplace) for s in samplings[1:]]
+        )
 
     def forward(self, x):  # B*4, 3, 128, 128
         enc1 = self.enc[0](x)
@@ -178,19 +290,21 @@ class Encoder(nn.Module):
         for i in range(1, len(self.enc)):
             latent = self.enc[i](latent)
         return latent, enc1
+
+
 class Decoder(nn.Module):
     """3D Decoder for SimVP"""
 
     def __init__(self, C_hid, C_out, N_S, spatio_kernel, act_inplace=True):
         samplings = sampling_generator(N_S, reverse=True)
         super(Decoder, self).__init__()
-        layers = []
-        for i, s in enumerate(samplings[:-1]):
-            layers.append(ConvSC(C_hid, C_hid // 2, spatio_kernel, upsampling=s, act_inplace=act_inplace))
-            C_hid //= 2  # Decrease C_hid by 2 for each sampling
-        layers.append(ConvSC(C_hid, C_out, spatio_kernel, upsampling=samplings[-1], act_inplace=act_inplace))
-        self.dec = nn.Sequential(*layers)
-        self.readout = nn.Conv2d(C_out, C_out, 1)
+        self.dec = nn.Sequential(
+            *[ConvSC(C_hid, C_hid, spatio_kernel, upsampling=s,
+                     act_inplace=act_inplace) for s in samplings[:-1]],
+              ConvSC(C_hid, C_hid, spatio_kernel, upsampling=samplings[-1],
+                     act_inplace=act_inplace)
+        )
+        self.readout = nn.Conv2d(C_hid, C_out, 1)
 
     def forward(self, hid, enc1=None):
         for i in range(0, len(self.dec)-1):
@@ -198,6 +312,8 @@ class Decoder(nn.Module):
         Y = self.dec[-1](hid + enc1)
         Y = self.readout(Y)
         return Y
+
+
 class MidIncepNet(nn.Module):
     """The hidden Translator of IncepNet for SimVPv1"""
 
@@ -342,13 +458,13 @@ class MidMetaNet(nn.Module):
         self.enc = nn.Sequential(*enc_layers)
 
     def forward(self, x):
-        #B, T, C, H, W = x.shape
-        #x = x.reshape(B, T*C, H, W)
+        B, T, C, H, W = x.shape
+        x = x.reshape(B, T*C, H, W)
         z = x
         for i in range(self.N2):
             z = self.enc[i](z)
 
-        y = z#.reshape(B, T, C, H, W)
+        y = z.reshape(B, T, C, H, W)
         return y
 
 class Mid3DNet(nn.Module):

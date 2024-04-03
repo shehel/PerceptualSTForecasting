@@ -171,9 +171,8 @@ class T4CDataset(Dataset):
             [60, 90]
         ])
 
-        self.perm = False
 
-        self.perm = False
+        self.perm = True
 
     def __len__(self):
         return self.X.shape[0]
@@ -185,7 +184,9 @@ class T4CDataset(Dataset):
 
     def _load_dataset(self, set="train"):
         self.file_list = list(Path(self.root_dir).rglob(self.file_filter))
+        #jself.file_list = self.file_list[:1]
         self.file_list.sort()
+
         self.len = len(self.file_list) * MAX_TEST_SLOT_INDEX
         static_list = list(Path(self.root_dir).rglob(self.static_filter))
 
@@ -205,9 +206,11 @@ class T4CDataset(Dataset):
         for i, file in enumerate(self.file_list):
              self.file_data.append(load_h5_file(file).astype(np.float32))
         last_city = load_h5_file(self.file_list[-1]).astype(np.float32)
-        inp_mean = np.mean(last_city[:,:,:,0::2], axis=0)[:,:,2]
+        inp_mean = np.mean(last_city[:,:,:,0::2], axis=0)[:,:]
+        # move last dim to first
+        inp_mean = np.moveaxis(inp_mean, -1, 0)
         # expand inp_mean to have shape [1,128,128]
-        inp_mean = inp_mean[np.newaxis,:,:]
+        #inp_mean = inp_mean[np.newaxis,:,:]
         
         self.static_dict[self.file_list[-1].parts[-3]] = inp_mean
 
@@ -277,12 +280,13 @@ class T4CDataset(Dataset):
         # remove mean from output data
         #output_data = output_data - inp_mean
         if self.perm:
-            inp_static_ch = inp_mean[0,:,:]
+            inp_static_ch = static_ch[dir_select,:,:]
             output_data = output_data[:,0::1,:,:]
         else:
             output_data = output_data[:,0::1,:,:]
             #inp_static_ch = inp_mean[2,:,:]
-            inp_static_ch = static_ch[0,:,:]
+            # TODO make it dynamic
+            inp_static_ch = static_ch[2,:,:]
         #inp_static_ch = inp_mean[:,:,:]
 
         #static_ch = static_ch[0, random_int_x:random_int_x+64, random_int_y:random_int_y+64]

@@ -233,19 +233,17 @@ class Base_method(object):
 
                             batch_x, batch_y= batch_x.to(self.device), batch_y.to(self.device)
                             batch_x_p = batch_x[:,:,perm[x],:,:]
+                            # TODO 4:5 should be changed to be dynamic for all channels
                             batch_y_p = batch_y[:,:,4:5,:,:]
                             pred_y, trend = self._predict(batch_x_p, batch_y_p)
                     #assert pred_y.shape == batch_y.shape
                     #assert trend.shape == batch_y.shape
                     #pred_y = pred_y + trend
 
-
-
-
                     if gather_data:  # return raw datas
                         results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
                                                 [batch_x_p[:,:,0:1,:,:].cpu().numpy(),
-                                                pred_y[:,:,0:1,:,:].cpu().numpy(),
+                                                pred_y[:,:,0:1,:,:].cpu().numpy()*batch_static.cpu().numpy(),
                                                 batch_y_p[:,:,0:1,:,:].cpu().numpy(),
                                                 batch_static.cpu().numpy()])))
                     else:  # return metrics
@@ -313,7 +311,13 @@ class Base_method(object):
         _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = losses_m
 #        results_all["loss"][0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
 
-        results_all["loss"][0] = (self.adapt_weights[0] * mse_loss) + ((1- self.adapt_weights[0]) * std_loss)
+        results_all["loss"][0] = (
+                        (self.adapt_weights[0] * mse_loss) +
+                            ((1- self.adapt_weights[0]) * (
+                                (self.adapt_weights[-1]*sum_loss)+ ((1-self.adapt_weights[-1])*std_loss)
+                                )
+                            )
+                        )
         #results_all["loss"][0] = (reg_mse)*0.001 + reg_std
         return results_all
 

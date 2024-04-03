@@ -5,13 +5,17 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from timm.utils import AverageMeter
 
-from openstl.models import SimVP_Model
+from openstl.models import SimVP_Model, UNet_Model, UNetQ_Model
 from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
 from .base_method import Base_method
+from openstl.core.optim_scheduler import get_optim_scheduler
 
 from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
 import pdb
-class SimVP(Base_method):
+import math
+
+
+class UNet(Base_method):
     r"""SimVP
 
     Implementation of `SimVP: Simpler yet Better Video Prediction
@@ -22,36 +26,45 @@ class SimVP(Base_method):
     def __init__(self, args, device, steps_per_epoch):
         Base_method.__init__(self, args, device, steps_per_epoch)
         self.model = self._build_model(self.config)
-        self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
+        self.model_optim, self.scheduler, self.by_epoch= self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
         self.criterion = DifferentialDivergenceLoss()
-        self.val_criterion = DilateLoss()
-        self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
-        self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([0.5,0,0,0,0.5])
+        # set 1 to be a torch.tensor and move it to gpu
+        self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
+        self.iters_to_make_updates = 70
+        self.adapt_weights = torch.tensor([1,0,0,0,0])
+
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
         self.component_4 = []
         self.component_5 = []
         self.iter = 0
-        #fun = pysdtw.distance.pairwise_l2_squared
 
-# create the SoftDTW distance function
-        #self.criterion = pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=True)
-        #self.criterion_cpu =  pysdtw.SoftDTW(gamma=1.0, dist_func=fun, use_cuda=False)
 
+    def _init_optimizer(self, steps_per_epoch):
+        opt_gen, sched_gen, epoch_gen = get_optim_scheduler(
+            self.args, self.args.epoch, self.model, steps_per_epoch)
+        return opt_gen, sched_gen, epoch_gen
     def _build_model(self, args):
+        
+        resid_model = UNet_Model(**args).to(self.device)
+        return resid_model
 
-        model = SimVP_Model(**args)
-        #model.load_state_dict(torch.load("work_dirs/e2_q7_m1_simconvsc/checkpoint.pth"), strict=False)
-        model = model.to(self.device)
-        return model
-
-    def _predict(self, batch_x, batch_y=None, **kwargs):
+    def _predict(self, batch_x, batch_y=None, test=False, **kwargs):
         """Forward the model"""
         if self.args.aft_seq_length == self.args.pre_seq_length:
-            pred_y, translated = self.model(batch_x)
+            # if test==True:
+            #     pdb.set_trace()
+            # without taking grad, run batch_x through self.d_model
+            # with torch.no_grad():
+            #     trend, _ = self.d_model(batch_x)
+            # assert shape of trend is same as shape of batch_y
+            #assert trend.shape == batch_y.shape
+
+            #resid = batch_y[:,:] - trend
+
+            pred_y, _ = self.model(batch_x)
         elif self.args.aft_seq_length < self.args.pre_seq_length:
             pred_y, translated = self.model(batch_x)
             pred_y = pred_y[:, :self.args.aft_seq_length]
@@ -70,7 +83,7 @@ class SimVP(Base_method):
                 pred_y.append(cur_seq[:, :m])
             
             pred_y = torch.cat(pred_y, dim=1)
-        return pred_y, translated
+        return pred_y, pred_y
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
@@ -88,10 +101,11 @@ class SimVP(Base_method):
         train_pbar = tqdm(train_loader) if self.rank == 0 else train_loader
 
         end = time.time()
-
         for batch_x, batch_y, batch_static in train_pbar:
 
             data_time_m.update(time.time() - end)
+
+
             self.model_optim.zero_grad()
 
             if not self.args.use_prefetcher:
@@ -99,7 +113,8 @@ class SimVP(Base_method):
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
-                pred_y, _ = self._predict(batch_x)
+
+
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
                 #encoded = self.model.encode(batch_y)
@@ -112,25 +127,26 @@ class SimVP(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,0:1,:,:], batch_y[:,:,0:1,:,:], batch_static)
-                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
-                loss = (
-                        (self.adapt_weights[0] * mse_loss) +
-                            ((1- self.adapt_weights[0]) * (
-                                (self.adapt_weights[-1]*sum_loss)+ ((1-self.adapt_weights[-1])*std_loss)
-                                )
-                            )
-                        )
-                #loss = self.adapt_weights[0] * mse_loss + (1-self.adapt_weights[0]) * (reg_std)
 
-                #loss = self.adapt_weights[2] * std_div + (1-self.adapt_weights[2]) * (mse_div) + self.adapt_weights[0]*mse_loss
+                pred_y, _ = self._predict(batch_x, batch_y)
+                # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:], batch_y[:,:,4:5,], batch_static[:,:,:,])
+
+                self.model.zero_grad()
+                #label.fill_(self.real_label)  # fake labels are real for generator cost
+                # Since we just updated D, perform another forward pass of all-fake batch through D
+                # Update G
+                #self.model_optim.step()
+                #loss = (self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * mse_div + self.adapt_weights[2] * std_div + self.adapt_weights[3] * reg_loss + self.adapt_weights[4] * sum_loss)
+                loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+                #loss = 1-(self.adapt_weights[0] * mse_loss * self.adapt_weights[3] * std_loss * self.adapt_weights[4] * sum_loss)
+                #loss.backward()
                 #encoded_norms = torch.mean(torch.norm(encoded.reshape(encoded.shape[0],-1), dim=(1)))
                 #recon_loss = F.mse_loss(recon[:,:,0::2], batch_y[:,:,0::2])
-                #latent_loss = (F.mse_loss(encoded, translated))
-                #loss = mse_loss# + encoded_norms
+                #latent_loss = F.mse_loss(encoded, translated)
 
-                 
-                
+
+
                 #loss = latent_loss + recon_loss + encoded_norms
 
                 #loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,[52,83,63,42],[76,104,14,63]],
@@ -142,9 +158,9 @@ class SimVP(Base_method):
 
 
             #     self.component_1.append(mse_loss.item())
-            #     self.component_2.append(reg_mse.item())
-            #     self.component_3.append(reg_std.item())
-            #     self.component_4.append(std_loss.item())
+            #     self.component_2.append(mse_div.item())
+            #     self.component_3.append(std_div.item())
+            #     self.component_4.append(reg_loss.item())
             #     self.component_5.append(sum_loss.item())
             # if self.iter % self.iters_to_make_updates == 0 and self.iter != 0:
             #         try:
@@ -162,24 +178,24 @@ class SimVP(Base_method):
             #         self.component_4 = []
             #         self.component_5 = []
             #         self.component_1.append(mse_loss.item())
-            #         self.component_2.append(reg_mse.item())
-            #         self.component_3.append(reg_std.item())
-            #         self.component_4.append(std_loss.item())
+            #         self.component_2.append(mse_div.item())
+            #         self.component_3.append(std_div.item())
+            #         self.component_4.append(reg_loss.item())
             #         self.component_5.append(sum_loss.item())
             # self.iter += 1
 
-            if epoch >= 0:
-                if self.loss_scaler is not None:
-                    if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
-                        raise ValueError("Inf or nan loss value. Please use fp32 training!")
-                    self.loss_scaler(
-                        loss, self.model_optim,
-                        clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
-                        parameters=self.model.parameters())
-                else:
-                    loss.backward()
-                    self.clip_grads(self.model.parameters())
-                    self.model_optim.step()
+
+            if self.loss_scaler is not None:
+                if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
+                    raise ValueError("Inf or nan loss value. Please use fp32 training!")
+                self.loss_scaler(
+                    loss, self.model_optim,
+                    clip_grad=self.args.clip_grad, clip_mode=self.args.clip_mode,
+                    parameters=self.model.parameters())
+            else:
+                loss.backward()
+                self.clip_grads(self.model.parameters())
+                self.model_optim.step()
 
             torch.cuda.synchronize()
             num_updates += 1
@@ -210,6 +226,7 @@ class SimVP(Base_method):
                 train_pbar.set_description(log_buffer)
 
             end = time.time()  # end for
+
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
         return num_updates, losses_m, losses_total, losses_mse_m,losses_reg_m,losses_reg_s,losses_std, losses_sum, eta
