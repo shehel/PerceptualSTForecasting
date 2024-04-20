@@ -227,26 +227,30 @@ class Base_method(object):
             data_loader.dataset.perm = False
             for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
                     #pred_y = torch.zeros_like(batch_y)
+                    # initialize arrays in the shape of btch_x and batch_y 
+                    pred_full = torch.zeros_like(batch_y[:,:,0::2])
+                    # set x_full to be batch_x
+                    x_full = batch_x.clone()
+                    batch_y_full = batch_y[:,:,0::2].clone()
+                    with torch.no_grad():
+                        for x in range(0,3):
 
-                    for x in range(2,3):
-                        with torch.no_grad():
-
-                            batch_x, batch_y= batch_x.to(self.device), batch_y.to(self.device)
+                            batch_x, batch_y= x_full.to(self.device), batch_y_full.to(self.device)
                             batch_x_p = batch_x[:,:,perm[x],:,:]
-                            batch_y_p = batch_y[:,:,4:5,:,:]
+                            # TODO 4:5 should be changed to be dynamic for all channels
+                            batch_y_p = batch_y[:,:,x:x+1,:,:]
                             pred_y, trend = self._predict(batch_x_p, batch_y_p)
+                            pred_full[:,:,x:x+1,:,:] = pred_y[:,:,0:1,:,:]
+                            #y_full[:,:,x:x+1,:,:] = batch_y_p[:,:,0:1,:,:]
                     #assert pred_y.shape == batch_y.shape
                     #assert trend.shape == batch_y.shape
                     #pred_y = pred_y + trend
 
-
-
-
                     if gather_data:  # return raw datas
                         results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
-                                                [batch_x_p[:,:,0:1,:,:].cpu().numpy(),
-                                                pred_y[:,:,0:1,:,:].cpu().numpy(),
-                                                batch_y_p[:,:,0:1,:,:].cpu().numpy(),
+                                                [x_full[:,:,0::2,:,:].cpu().numpy(),
+                                                pred_full[:,:,:,:,:].cpu().numpy()*batch_static.cpu().numpy(),
+                                                batch_y_full[:,:,:,:,:].cpu().numpy(),
                                                 batch_static.cpu().numpy()])))
                     else:  # return metrics
                         #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
@@ -276,9 +280,9 @@ class Base_method(object):
 
                 if gather_data:  # return raw datas
                     results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
-                                            [batch_x[:,:,4:5,:,:].cpu().numpy(),
-                                        pred_y[:,:,4:5,:,:].cpu().numpy()*batch_static.cpu().numpy(),
-                                        batch_y[:,:,4:5,:,:].cpu().numpy(),
+                                            [batch_x[:,:,0::2,:,:].cpu().numpy(),
+                                        pred_y[:,:,0::2,:,:].cpu().numpy()*batch_static.cpu().numpy(),
+                                        batch_y[:,:,0::2,:,:].cpu().numpy(),
                                         batch_static.cpu().numpy()])))
                 else:  # return metrics
                     #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
@@ -298,11 +302,23 @@ class Base_method(object):
         results_all = {}
         for k in results[0].keys():
             results_all[k] = np.concatenate([batch[k] for batch in results], axis=0)
-        preds = torch.tensor(results_all['preds'])
+        # results_all['inputs'] are of shape (batch_size, 12, 1, 128, 128), set preds to be the average along the first dimension and duplicate it 12 times
+        #preds = results_all['inputs'].mean(axis=1).repeat(12, 1)
+        # set preds to zeros 
+        #preds = torch.zeros_like(torch.tensor(results_all['preds']))
+        # make preds have an empty axis in 2nd dimension
+        #preds = torch.tensor(np.expand_dims(preds, axis=2))
+
+        
+        #preds = torch.tensor(results_all['preds'])
         #results['trues'] = results['trues'][:,0:1,4:5,70,65]
+        preds = torch.tensor(results_all['preds'])
+        # clip preds to be between -255 and 255
+        preds = torch.clamp(preds, -255, 255)
         trues = torch.tensor(results_all['trues'])
         #losses_m = self.criterion_cpu(preds, trues)
         static_ch = torch.tensor(results_all['static'])
+
         # set static_ch to be a zeros tensor with shape static_ch.shape
         #static_ch = torch.zeros_like(static_ch)
         #static_ch[:,:,0:1,64,64] = 1
@@ -313,7 +329,13 @@ class Base_method(object):
         _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = losses_m
 #        results_all["loss"][0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
 
-        results_all["loss"][0] = (self.adapt_weights[0] * mse_loss) + ((1- self.adapt_weights[0]) * std_loss)
+        results_all["loss"][0] = (
+                        (self.adapt_weights[0] * mse_loss) +
+                            ((1- self.adapt_weights[0]) * (
+                                (self.adapt_weights[-1]*sum_loss)+ ((1-self.adapt_weights[-1])*std_loss)
+                                )
+                            )
+                        )
         #results_all["loss"][0] = (reg_mse)*0.001 + reg_std
         return results_all
 

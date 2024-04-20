@@ -124,21 +124,22 @@ class BaseExperiment(object):
             # re-set gpu_ids with distributed training mode
             self._gpu_ids = range(self._world_size)
         self.device = self._acquire_device()
-        if self._early_stop <= self._max_epochs // 5:
+
+        if self._early_stop <= self._max_epochs // 50:
             self._early_stop = self._max_epochs * 2
 
         # log and checkpoint
         base_dir = self.args.res_dir if self.args.res_dir is not None else 'work_dirs'
         try:
             task = Task.get_task(task_id=self.args.ex_name)
-            #model_path = task.artifacts['best_model_weights'].get_local_copy()
-            model_path = task.artifacts['latest_model_weights'].get_local_copy()
+            model_path = task.artifacts['best_model_weights'].get_local_copy()
+            #model_path = task.artifacts['latest_model_weights'].get_local_copy()
             # copy the model at location self.path to ./work_dirs/task.name
             # but make the dir before if it doesnt exist
             if not os.path.exists(f"{base_dir}/{task.name}"):
                 os.makedirs(f"{base_dir}/{task.name}/checkpoints")
-            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
-            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
+            os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoint.pth")
+            #os.system(f"cp {model_path} {base_dir}/{task.name}/checkpoints/latest.pth")
             self.args.ex_name = task.name
         except:
             print ("Not a clearml task. Using local directory")
@@ -346,9 +347,9 @@ class BaseExperiment(object):
 
     def train(self):
         """Training loops of STL methods"""
-        recorder = Recorder(verbose=True, early_stop_time=min(self._max_epochs // 10, 10))
+        recorder = Recorder(verbose=True, early_stop_time=min(self._max_epochs // 10, 7))
         num_updates = self._epoch * self.steps_per_epoch
-        early_stop = False
+        early_stop = True
         self.call_hook('before_train_epoch')
 
         logger = self.task.get_logger()
@@ -386,12 +387,16 @@ class BaseExperiment(object):
                         series='Train total loss', value=loss_total.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report',
                         series='Train sum loss', value=loss_sum.avg, iteration=epoch) 
-                    early_stop =recorder(vali_loss, self.method.model, self.path, epoch)
+                    early_stop_decision =recorder(vali_loss, self.method.model, self.path, epoch, early_stop)
                     self._save(name='latest')
             if self._use_gpu and self.args.empty_cache:
                 torch.cuda.empty_cache()
-            # if epoch > self._early_stop and early_stop:  # early stop training
-            #     print_log('Early stop training at f{} epoch'.format(epoch))
+            print ("______________________________")
+            print (epoch, self._early_stop, early_stop_decision)
+            print ("______________________________")
+            if epoch > self._early_stop and early_stop_decision:  # early stop training
+                print_log('Early stop training at f{} epoch'.format(epoch))
+                break
 
         if not check_dir(self.path):  # exit training when work_dir is removed
             assert False and "Exit training because work_dir is removed"
@@ -413,13 +418,13 @@ class BaseExperiment(object):
         # subtract results['inputs'] by its temporal mean along first dimension using numpy
         #results['inputs'] = results['inputs'] - np.mean(results['inputs'], axis=1, keepdims=True)
 
-        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis],
-                    results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
+        plot_tmaps(results['trues'][200,:,2,:,:,np.newaxis], results['preds'][200,:,2,:,:,np.newaxis],
+                    results['inputs'][200,:,2,:,:,np.newaxis], epoch, logger)
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
 
         #x_values = range(len(results['trues'][19, :, 0, 32, 32]))
-        x_values = range(len(results['trues'][19, :, 0, 64, 64]))
+        x_values = range(len(results['trues'][19, :, 2, 64, 64]))
         shifted_x_values = [x - shift_amount for x in x_values]  # Shift x-values for 'inputs'
 
         # Define the list of pixel coordinates
@@ -442,9 +447,9 @@ class BaseExperiment(object):
                 y, x = pixel  # Unpack the tuple into x and y coordinates
 
                 # Plot the inputs, true values, and predictions for each pixel
-                plt.plot(shifted_x_values, results['inputs'][i, :, 0, y, x], label=f"Inputs at {pixel}")
-                plt.plot(x_values, results['trues'][i, :, 0, y, x], label=f"True at {pixel}")
-                plt.plot(x_values, results['preds'][i, :, 0, y, x], label=f"Preds_m at {pixel}")
+                plt.plot(shifted_x_values, results['inputs'][i, :, 2, y, x], label=f"Inputs at {pixel}")
+                plt.plot(x_values, results['trues'][i, :, 2, y, x], label=f"True at {pixel}")
+                plt.plot(x_values, results['preds'][i, :, 2, y, x], label=f"Preds_m at {pixel}")
 
                 # Show the legend and get the current figure
                 plt.legend()
@@ -468,8 +473,8 @@ class BaseExperiment(object):
             y, x = pixel  # Unpack the tuple into x and y coordinates
 
             # Plot the true values and predictions over the specified range for each pixel
-            plt.plot(results['trues'][:240, 0, 0, y, x], label=f"True at {pixel}")
-            plt.plot(results['preds'][:240, 0, 0, y, x], label=f"Preds_m at {pixel}")
+            plt.plot(results['trues'][:240, 0, 2, y, x], label=f"True at {pixel}")
+            plt.plot(results['preds'][:240, 0, 2, y, x], label=f"Preds_m at {pixel}")
 
             # Show the legend and get the current figure
             plt.legend()
@@ -518,13 +523,13 @@ class BaseExperiment(object):
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
 
-
+        print (results["loss"])
         # TODO Fix inp_mean calculation since adding by results will make it expand dims
 
-        inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
-        results["preds"] = ((results["preds"]+inp_mean)*self.train_loader.dataset.s[0,4,0,0])+self.train_loader.dataset.m[0,4,0,0]
-        results["trues"] = ((results["trues"]+inp_mean)*self.train_loader.dataset.s[0,4,0,0])+self.train_loader.dataset.m[0,4,0,0]
-        results["inputs"] = ((results["trues"]+inp_mean)*self.train_loader.dataset.s[0,4,0,0])+self.train_loader.dataset.m[0,4,0,0]
+        #inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
+        # results["preds"] = ((results["preds"]+inp_mean)*self.train_loader.dataset.s[0,4,0,0])+self.train_loader.dataset.m[0,4,0,0]
+        # results["trues"] = ((results["trues"]+inp_mean)*self.train_loader.dataset.s[0,4,0,0])+self.train_loader.dataset.m[0,4,0,0]
+        # results["inputs"] = ((results["trues"]+inp_mean)*self.train_loader.dataset.s[0,4,0,0])+self.train_loader.dataset.m[0,4,0,0]
         # Add a dimension to self.train_loader.dataset.s and self.train_loader.dataset.m
         # norm_mean = np.expand_dims(self.train_loader.dataset.m, axis=0)
         # norm_std = np.expand_dims(self.train_loader.dataset.s, axis=0
@@ -543,24 +548,25 @@ class BaseExperiment(object):
                                     metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
         results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
 
-        if self._rank == 0:
-            print_log(eval_log)
-            folder_path = osp.join(self.path, 'saved_comb')
-            check_dir(folder_path)
+        # if self._rank == 0:
+        #     print_log(eval_log)
+        #     folder_path = osp.join(self.path, 'saved_comb')
+        #     check_dir(folder_path)
 
-            if self.args.ex_name.endswith('unet'):
-                for np_data in ['metrics', 'inputs', 'trues', 'preds']:
-                    np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
-            else:
-                for np_data in ['metrics', 'trues', 'preds']:
-                    np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
+        #     if self.args.ex_name.endswith('unet'):
+        #         for np_data in ['metrics', 'inputs', 'trues', 'preds']:
+        #             np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
+        #     else:
+        #         for np_data in ['metrics', 'trues', 'preds']:
+        #             np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 
         return eval_res['mse']
 
-    def inference(self, best_model=False):
+    def inference(self, best_model=True):
         """A inference loop of STL methods"""
         if best_model:
             best_model_path = osp.join(self.path, 'checkpoint.pth')
+
             self._load_from_state_dict(torch.load(best_model_path))
         else:
             best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
@@ -571,18 +577,29 @@ class BaseExperiment(object):
         results = self.method.test_one_epoch(self, self.test_loader)
         
         self.call_hook('after_val_epoch')
-        inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
-        results["trues"] = (results["trues"])
-        results["preds"] = (results["preds"])
-        results["inputs"] = (results["inputs"])
+        print (results["loss"])
+
+        # inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
+
+        if 'weather' in self.args.dataname:
+            metric_list, spatial_norm = self.args.metrics, True
+            channel_names = self.test_loader.dataset.data_name if 'mv' in self.args.dataname else None
+        else:
+            metric_list, spatial_norm, channel_names = self.args.metrics, False, None
+        eval_res, eval_log = metric(results['preds'], results['trues'],
+                                    self.test_loader.dataset.mean, self.test_loader.dataset.std,
+                                    metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
+        results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
 
         # clamp trues and preds to be between 0 and 255 and convert to uint8
         #results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)
         #results["preds"] = np.clip(results["preds"], 0, 255).astype(np.uint8)
 
         # if self._rank == 0:
-        #     folder_path = osp.join(self.path, 'saved1')
+
+        #     folder_path = osp.join(self.path, 'saved')
         #     check_dir(folder_path)
+        #     print ("Saving to ", folder_path)
         #     for np_data in ['inputs', 'trues', 'preds']:
         #         np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 

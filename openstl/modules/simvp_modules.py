@@ -38,10 +38,10 @@ class BasicConv2d(nn.Module):
                 in_channels, out_channels, kernel_size=kernel_size,
                 stride=stride, padding=padding, dilation=dilation)
 
-        #self.norm = nn.GroupNorm(2, out_channels)
-        self.norm = nn.BatchNorm2d(out_channels)
-        #self.act = nn.SiLU(True)
-        self.act = nn.ReLU(inplace=act_inplace)
+        self.norm = nn.GroupNorm(2, out_channels)
+        #self.norm = nn.BatchNorm2d(out_channels)
+        self.act = nn.SiLU(True)
+        #self.act = nn.ReLU(inplace=act_inplace)
 
         self.apply(self._init_weights)
 
