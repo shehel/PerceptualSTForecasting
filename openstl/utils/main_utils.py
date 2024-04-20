@@ -332,7 +332,7 @@ def sample_pixels_efficient(true, pred, fixed_positions):
             indices = indices.to(true.device)
             sampled_true.index_copy_(0, indices, true[:, :, c, h, w].unsqueeze(-1))
             sampled_pred.index_copy_(0, indices, pred[:, :, c, h, w].unsqueeze(-1))
-    #   
+    #
     return sampled_true, sampled_pred
 class DilateLoss(nn.Module):
     def __init__(self, alpha=0.1, gamma=0.001, device=None):
@@ -401,7 +401,7 @@ def ccc(gold, pred):
     ccc = 2. * covariance / (gold_var + pred_var + (gold_mean - pred_mean) ** 2 + torch.finfo(torch.float32).eps)
     return ccc
 
-def ccc_loss(gold, pred, mask):    
+def ccc_loss(gold, pred, mask):
     return (1. - torch.mean(ccc(gold, pred) * mask[:]))
 class DifferentialDivergenceLoss(nn.Module):
     def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.000002):

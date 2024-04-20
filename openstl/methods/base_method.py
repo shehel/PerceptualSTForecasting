@@ -227,7 +227,7 @@ class Base_method(object):
             data_loader.dataset.perm = False
             for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
                     #pred_y = torch.zeros_like(batch_y)
-                    # initialize arrays in the shape of btch_x and batch_y 
+                    # initialize arrays in the shape of btch_x and batch_y
                     pred_full = torch.zeros_like(batch_y[:,:,0::2])
                     # set x_full to be batch_x
                     x_full = batch_x.clone()
@@ -304,12 +304,12 @@ class Base_method(object):
             results_all[k] = np.concatenate([batch[k] for batch in results], axis=0)
         # results_all['inputs'] are of shape (batch_size, 12, 1, 128, 128), set preds to be the average along the first dimension and duplicate it 12 times
         #preds = results_all['inputs'].mean(axis=1).repeat(12, 1)
-        # set preds to zeros 
+        # set preds to zeros
         #preds = torch.zeros_like(torch.tensor(results_all['preds']))
         # make preds have an empty axis in 2nd dimension
         #preds = torch.tensor(np.expand_dims(preds, axis=2))
 
-        
+
         #preds = torch.tensor(results_all['preds'])
         #results['trues'] = results['trues'][:,0:1,4:5,70,65]
         preds = torch.tensor(results_all['preds'])
