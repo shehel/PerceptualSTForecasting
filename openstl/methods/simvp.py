@@ -28,7 +28,7 @@ class SimVP(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
         self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([0.5,0,0,0,0.5])
+        self.adapt_weights = torch.tensor([1.0,0,0,0,0.0])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -112,7 +112,7 @@ class SimVP(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,0:1,:,:], batch_y[:,:,0:1,:,:], batch_static)
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,0::2,:,:], batch_y[:,:,0::2,:,:], batch_static)
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
                 loss = (
                         (self.adapt_weights[0] * mse_loss) +

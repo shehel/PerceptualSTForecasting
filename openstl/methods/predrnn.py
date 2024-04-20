@@ -8,6 +8,7 @@ from openstl.models import PredRNN_Model
 from openstl.utils import (reduce_tensor, reshape_patch, reshape_patch_back,
                            reserve_schedule_sampling_exp, schedule_sampling)
 from .base_method import Base_method
+import pdb
 
 
 class PredRNN(Base_method):
@@ -69,7 +70,7 @@ class PredRNN(Base_method):
         train_pbar = tqdm(train_loader) if self.rank == 0 else train_loader
 
         end = time.time()
-        for batch_x, batch_y in train_pbar:
+        for batch_x, batch_y, batch_static in train_pbar:
             data_time_m.update(time.time() - end)
             self.model_optim.zero_grad()
 
@@ -89,7 +90,7 @@ class PredRNN(Base_method):
 
             with self.amp_autocast():
                 img_gen, loss = self.model(ims, real_input_flag)
-
+            pdb.set_trace()
             if not self.dist:
                 losses_m.update(loss.item(), batch_x.size(0))
 

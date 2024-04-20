@@ -315,26 +315,25 @@ def sample_pixels_efficient(true, pred, fixed_positions):
     - sampled_pred (torch.Tensor): Sampled prediction tensor.
     """
 
-    batch_size, timesteps, _, height, width = true.size()
+    batch_size, timesteps, channels, height, width = true.size()
     num_pixels = len(fixed_positions)
 
     # Initialize the output tensors
-    sampled_true = torch.zeros(batch_size * num_pixels, timesteps, 1, device=true.device)
-    sampled_pred = torch.zeros(batch_size * num_pixels, timesteps, 1, device=pred.device)
+    sampled_true = torch.zeros(batch_size * num_pixels * channels, timesteps, 1, device=true.device)
+    sampled_pred = torch.zeros(batch_size * num_pixels * channels, timesteps, 1, device=pred.device)
 
     # Gather the data at fixed positions
     for i, (h, w) in enumerate(fixed_positions):
         if h >= height or w >= width:
             raise ValueError("Position out of bounds.")
 
-        indices = torch.arange(batch_size) * num_pixels + i
-        indices = indices.to(true.device)
-        sampled_true.index_copy_(0, indices, true[:, :, 0, h, w].unsqueeze(-1))
-        sampled_pred.index_copy_(0, indices, pred[:, :, 0, h, w].unsqueeze(-1))
-
+        for c in range(channels):
+            indices = torch.arange(batch_size) * num_pixels * channels + i * channels + c
+            indices = indices.to(true.device)
+            sampled_true.index_copy_(0, indices, true[:, :, c, h, w].unsqueeze(-1))
+            sampled_pred.index_copy_(0, indices, pred[:, :, c, h, w].unsqueeze(-1))
+    #   
     return sampled_true, sampled_pred
-
-
 class DilateLoss(nn.Module):
     def __init__(self, alpha=0.1, gamma=0.001, device=None):
         super(DilateLoss, self).__init__()
@@ -388,8 +387,8 @@ class PinballLoss():
 
       return loss
 def ccc(gold, pred):
-    gold = torch.squeeze(gold, dim=2)
-    pred = torch.squeeze(pred, dim=2)
+    #gold = torch.squeeze(gold, dim=2)
+    #pred = torch.squeeze(pred, dim=2)
 
     gold_mean = torch.mean(gold, dim=1, keepdim=True)
     pred_mean = torch.mean(pred, dim=1, keepdim=True)
@@ -402,7 +401,8 @@ def ccc(gold, pred):
     ccc = 2. * covariance / (gold_var + pred_var + (gold_mean - pred_mean) ** 2 + torch.finfo(torch.float32).eps)
     return ccc
 
-def ccc_loss(gold, pred, mask):    return 1. - torch.mean(ccc(gold, pred) * mask[:,0])
+def ccc_loss(gold, pred, mask):    
+    return (1. - torch.mean(ccc(gold, pred) * mask[:]))
 class DifferentialDivergenceLoss(nn.Module):
     def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.000002):
         super(DifferentialDivergenceLoss, self).__init__()
@@ -460,7 +460,6 @@ class DifferentialDivergenceLoss(nn.Module):
         #pred = pred * static_ch
         #true = true * static_ch
         #pdb.set_trace()
-
         mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
         mae_loss = torch.mean(F.l1_loss(pred, true, reduction='none') * static_ch)
         if train_run==False:
@@ -477,13 +476,13 @@ class DifferentialDivergenceLoss(nn.Module):
         #sum_loss = mse_loss
         if train_run==False:
             print ("DILATE")
-            for i in self.pixel_list:
+            # for i in self.pixel_list:
 
-                sampled_true, sampled_pred = sample_pixels_efficient(true, pred, [i])
-                sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
-                sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
-                reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
-                print (i, reg_mse, reg_std, ((reg_mse)*0.001 + reg_std))
+            #     sampled_true, sampled_pred = sample_pixels_efficient(true, pred, [i])
+            #     sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
+            #     sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
+            #     reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
+            #     print (i, reg_mse, reg_std, ((reg_mse)*0.001 + reg_std))
             sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixel_list)
             sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
             sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
@@ -562,10 +561,10 @@ class DifferentialDivergenceLoss(nn.Module):
             sum_loss = F.mse_loss(pred_diffx, true_diffx)
             print (sum_loss)
             print (sum_l1_loss)
-            c_loss = ccc_loss(true[:,:,:,self.pixels[:,0], self.pixels[:,1]],pred[:,:,:,self.pixels[:,0], self.pixels[:,1]], 
+            c_loss = ccc_loss(true[:,:,:,self.pixels[:,0], self.pixels[:,1]],pred[:,:,:,self.pixels[:,0], self.pixels[:,1]],
                             static_ch[:,:,:,self.pixels[:,0], self.pixels[:,1]])
             print (c_loss)
-   
+
         if train_run==False:
 
             print ("Sum")

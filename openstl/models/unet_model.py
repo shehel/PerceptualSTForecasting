@@ -40,8 +40,8 @@ class UNet_Model(nn.Module):
 
 
 
-        self.hid = MidMetaNet(256, 256, 4,
-                 input_resolution=(16, 16), model_type="convsc")
+        #self.hid = MidMetaNet(256, 256, 4,
+        #         input_resolution=(16, 16), model_type="convsc")
 
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
@@ -64,7 +64,7 @@ class UNet_Model(nn.Module):
             if i != len(self.down_path) - 1:
                 blocks.append(x)
                 x = torch.nn.functional.max_pool2d(x, 2)
-        x = self.hid(x)
+        #x = self.hid(x)
 
         # copy translated to x
         translated = x

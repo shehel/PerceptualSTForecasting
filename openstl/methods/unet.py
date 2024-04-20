@@ -32,7 +32,7 @@ class UNet(Base_method):
         # set 1 to be a torch.tensor and move it to gpu
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
-        self.adapt_weights = torch.tensor([0.6,0,0,0,0.1])
+        self.adapt_weights = torch.tensor([1.0,0,0,0,0.0])
 
         self.component_1 = []
         self.component_2 = []
@@ -129,9 +129,9 @@ class UNet(Base_method):
 
                 pred_y, _ = self._predict(batch_x, batch_y)
                 # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,4:5,:], batch_y[:,:,4:5,], batch_static[:,:,:,])
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,0::2,:], batch_y[:,:,0::2,], batch_static[:,:,:,])
 
-                self.model.zero_grad()
+                #self.model.zero_grad()
                 #label.fill_(self.real_label)  # fake labels are real for generator cost
                 # Since we just updated D, perform another forward pass of all-fake batch through D
                 # Update G
@@ -191,7 +191,7 @@ class UNet(Base_method):
             #         self.component_5.append(sum_loss.item())
             # self.iter += 1
 
-            if epoch != 0:
+            if epoch >= 0:
                 if self.loss_scaler is not None:
                     if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
                         raise ValueError("Inf or nan loss value. Please use fp32 training!")

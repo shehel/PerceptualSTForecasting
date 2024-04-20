@@ -418,13 +418,13 @@ class BaseExperiment(object):
         # subtract results['inputs'] by its temporal mean along first dimension using numpy
         #results['inputs'] = results['inputs'] - np.mean(results['inputs'], axis=1, keepdims=True)
 
-        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis],
-                    results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
+        plot_tmaps(results['trues'][200,:,2,:,:,np.newaxis], results['preds'][200,:,2,:,:,np.newaxis],
+                    results['inputs'][200,:,2,:,:,np.newaxis], epoch, logger)
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
 
         #x_values = range(len(results['trues'][19, :, 0, 32, 32]))
-        x_values = range(len(results['trues'][19, :, 0, 64, 64]))
+        x_values = range(len(results['trues'][19, :, 2, 64, 64]))
         shifted_x_values = [x - shift_amount for x in x_values]  # Shift x-values for 'inputs'
 
         # Define the list of pixel coordinates
@@ -447,9 +447,9 @@ class BaseExperiment(object):
                 y, x = pixel  # Unpack the tuple into x and y coordinates
 
                 # Plot the inputs, true values, and predictions for each pixel
-                plt.plot(shifted_x_values, results['inputs'][i, :, 0, y, x], label=f"Inputs at {pixel}")
-                plt.plot(x_values, results['trues'][i, :, 0, y, x], label=f"True at {pixel}")
-                plt.plot(x_values, results['preds'][i, :, 0, y, x], label=f"Preds_m at {pixel}")
+                plt.plot(shifted_x_values, results['inputs'][i, :, 2, y, x], label=f"Inputs at {pixel}")
+                plt.plot(x_values, results['trues'][i, :, 2, y, x], label=f"True at {pixel}")
+                plt.plot(x_values, results['preds'][i, :, 2, y, x], label=f"Preds_m at {pixel}")
 
                 # Show the legend and get the current figure
                 plt.legend()
@@ -473,8 +473,8 @@ class BaseExperiment(object):
             y, x = pixel  # Unpack the tuple into x and y coordinates
 
             # Plot the true values and predictions over the specified range for each pixel
-            plt.plot(results['trues'][:240, 0, 0, y, x], label=f"True at {pixel}")
-            plt.plot(results['preds'][:240, 0, 0, y, x], label=f"Preds_m at {pixel}")
+            plt.plot(results['trues'][:240, 0, 2, y, x], label=f"True at {pixel}")
+            plt.plot(results['preds'][:240, 0, 2, y, x], label=f"Preds_m at {pixel}")
 
             # Show the legend and get the current figure
             plt.legend()
@@ -566,7 +566,7 @@ class BaseExperiment(object):
         """A inference loop of STL methods"""
         if best_model:
             best_model_path = osp.join(self.path, 'checkpoint.pth')
-        
+
             self._load_from_state_dict(torch.load(best_model_path))
         else:
             best_model_path = osp.join(self.path, 'checkpoints/latest.pth')
@@ -577,6 +577,7 @@ class BaseExperiment(object):
         results = self.method.test_one_epoch(self, self.test_loader)
         
         self.call_hook('after_val_epoch')
+        print (results["loss"])
 
         # inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
 
@@ -594,13 +595,13 @@ class BaseExperiment(object):
         #results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)
         #results["preds"] = np.clip(results["preds"], 0, 255).astype(np.uint8)
 
-        if self._rank == 0:
-            
-            folder_path = osp.join(self.path, 'saved')
-            check_dir(folder_path)
-            print ("Saving to ", folder_path)
-            for np_data in ['inputs', 'trues', 'preds']:
-                np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
+        # if self._rank == 0:
+
+        #     folder_path = osp.join(self.path, 'saved')
+        #     check_dir(folder_path)
+        #     print ("Saving to ", folder_path)
+        #     for np_data in ['inputs', 'trues', 'preds']:
+        #         np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 
         return None
 

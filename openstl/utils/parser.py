@@ -20,7 +20,7 @@ def create_parser():
                         help='Whether to use Native AMP for mixed precision training (PyTorch=>1.6.0)')
     parser.add_argument('--torchscript', action='store_true', default=False,
                         help='Whether to use torchscripted model')
-    parser.add_argument('--seed', default=42, type=int)
+    parser.add_argument('--seed', default=402, type=int)
     parser.add_argument('--diff_seed', action='store_true', default=False,
                         help='Whether to set different seeds for different ranks')
     parser.add_argument('--fps', action='store_true', default=False,

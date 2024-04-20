@@ -281,18 +281,20 @@ class T4CDataset(Dataset):
         #output_data = output_data - inp_mean
         if self.perm:
             inp_static_ch = static_ch[dir_select,:,:]
+            # add 3 more channels but make them all zeros
+            inp_static_ch = np.stack([inp_static_ch, np.zeros_like(inp_static_ch), np.zeros_like(inp_static_ch), np.zeros_like(inp_static_ch)], axis=0)
             output_data = output_data[:,0::1,:,:]
         else:
             output_data = output_data[:,0::1,:,:]
             #inp_static_ch = inp_mean[2,:,:]
             # TODO make it dynamic
-            inp_static_ch = static_ch[2,:,:]
+            inp_static_ch = static_ch[:,:,:]
         #inp_static_ch = inp_mean[:,:,:]
 
         #static_ch = static_ch[0, random_int_x:random_int_x+64, random_int_y:random_int_y+64]
         #static_ch = static_ch/static_ch.sum()
-        static_ch = np.zeros((128,128))
-        static_ch[64-32:64+32,64-32:64+32] = inp_static_ch[64-32:64+32,64-32:64+32]
+        static_ch = np.zeros((4,128,128))
+        static_ch[:,64-32:64+32,64-32:64+32] = inp_static_ch[:,64-32:64+32,64-32:64+32]
         static_ch = np.abs(static_ch)
         #pxs = 500
         if self.test:
@@ -307,8 +309,8 @@ class T4CDataset(Dataset):
             a = 1
 
         
-        static_ch[self.pixel_list[:, 0], self.pixel_list[:, 1]] = 1
-        static_ch = static_ch[np.newaxis, np.newaxis, :, :]
+        static_ch[:,self.pixel_list[:, 0], self.pixel_list[:, 1]] = 1
+        static_ch = static_ch[np.newaxis, :,:, :]
         
 
         # zero out all but [:,:,52,76] in output_data
@@ -357,7 +359,6 @@ def load_data(batch_size, val_batch_size, data_root,
     val_set._load_dataset()
     test_set._load_dataset()
 
-    
     #test_set.file_list = [Path('/home/jeschneider/Documents/data/raw/MOSCOW/validation/2019-01-29_MOSCOW_8ch.h5')]
     #test_set.file_list = [Path('/data/raw/ANTWERP/training/2019-06-25_ANTWERP_8ch.h5')]
     #test_set.file_list = [Path('/home/shehel/ml/NeurIPS2021-traffic4cast/data/raw/ANTWERP/training/2020-04-25_ANTWERP_8ch.h5')]
