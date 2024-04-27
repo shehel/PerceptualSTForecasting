@@ -100,7 +100,7 @@ class UNet(Base_method):
         train_pbar = tqdm(train_loader) if self.rank == 0 else train_loader
 
         end = time.time()
-        for batch_x, batch_y, batch_static in train_pbar:
+        for batch_x, batch_y in train_pbar:
 
             data_time_m.update(time.time() - end)
 
@@ -108,7 +108,7 @@ class UNet(Base_method):
             self.model_optim.zero_grad()
 
             if not self.args.use_prefetcher:
-                batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
+                batch_x, batch_y= batch_x.to(self.device), batch_y.to(self.device)
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
@@ -129,7 +129,7 @@ class UNet(Base_method):
 
                 pred_y, _ = self._predict(batch_x, batch_y)
                 # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,0::2,:], batch_y[:,:,0::2,], batch_static[:,:,:,])
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,:,:], batch_y[:,:,:,])
 
                 #self.model.zero_grad()
                 #label.fill_(self.real_label)  # fake labels are real for generator cost

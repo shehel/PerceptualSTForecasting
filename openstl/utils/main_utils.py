@@ -401,10 +401,10 @@ def ccc(gold, pred):
     ccc = 2. * covariance / (gold_var + pred_var + (gold_mean - pred_mean) ** 2 + torch.finfo(torch.float32).eps)
     return ccc
 
-def ccc_loss(gold, pred, mask):
-    return (1. - torch.mean(ccc(gold, pred) * mask[:]))
+def ccc_loss(gold, pred):
+    return (1. - torch.mean(ccc(gold, pred)))
 class DifferentialDivergenceLoss(nn.Module):
-    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.000002):
+    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.1):
         super(DifferentialDivergenceLoss, self).__init__()
         self.tau = tau
         self.epsilon = epsilon
@@ -414,21 +414,21 @@ class DifferentialDivergenceLoss(nn.Module):
         #self.ssim = SSIM(window_size=4)
         self.q_loss = QuantileRegressionLoss(params={"q_lo": 0.05, "q_hi": 0.95, "q_lo_weight": 1, "q_hi_weight": 1, "mse_weight": 1})
         #self.pixels = [(42, 23), (45, 26), (43, 24), (28, 28), (22, 25), (24, 26), (8, 71), (26, 27), (44, 25), (27, 28), (19, 24), (25, 27), (18, 24), (20, 24), (41, 22), (21, 25), (23, 26), (65, 90), (48, 34), (66, 91), (46, 27), (53, 42), (57, 47), (54, 43), (62, 56), (51, 39), (69, 109), (49, 36), (50, 37), (70, 111), (60, 53), (56, 46), (48, 33), (67, 104), (52, 40), (7, 71), (71, 114), (58, 48), (72, 127), (61, 54), (67, 93), (29, 28), (40, 22), (41, 23), (68, 106), (62, 57), (6, 70), (61, 55), (64, 89)]
-        self.pixel_list = [(64, 64),
-            (64, 65),
-            (36, 83),
-            (63, 86),
-            (67, 94),
-            (58, 49),
-            (50, 37),
-            (42, 95),
-            (60, 90)]
+        self.pixel_list = [(10, 10),
+            (5, 25),
+            (18, 33),
+            (11, 46),
+            (20, 24),
+            (30, 19),
+            (24, 7),
+            (18, 5),
+            (10, 50)]
         #self.pixels = [(25, 15), (30, 24), (28, 21), (16, 2), (22, 11), (24, 14), (21, 10), (29, 22), (19, 7), (26, 16), (33, 58), (16, 1), (18, 5), (34, 59), (29, 23), (17, 4), (30, 25), (31, 27), (20, 8), (13, 31), (27, 19), (31, 28), (27, 18), (31, 26), (35, 61), (17, 3), (23, 12), (0, 62), (32, 57), (31, 29), (32, 32), (23, 13), (36, 63), (32, 31), (31, 30), (18, 6), (32, 33), (15, 0), (26, 17), (32, 34), (28, 20), (31, 54), (35, 60), (32, 35), (21, 9), (3, 62), (20, 9), (7, 51), (31, 52), (32, 36)]
         # Create indices for fixed positions
         self.pixels = self.pixel_list[:]
         self.pixels = torch.tensor(self.pixels, dtype=torch.long)
 
-    def forward(self, pred, true, static_ch, train_run=True):
+    def forward(self, pred, true, train_run=True):
         #true_std = torch.std(true, dim=1, keepdim=False)
         #true_std = true_std/((torch.max(true_std)+self.epsilon))
         #mse_loss = self.q_loss(pred, true, static_ch[:,0], true_std)
@@ -460,8 +460,8 @@ class DifferentialDivergenceLoss(nn.Module):
         #pred = pred * static_ch
         #true = true * static_ch
         #pdb.set_trace()
-        mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
-        mae_loss = torch.mean(F.l1_loss(pred, true, reduction='none') * static_ch)
+        mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none'))
+        mae_loss = torch.mean(F.l1_loss(pred, true, reduction='none'))
         if train_run==False:
             print ("L1 ", mae_loss)
             print ("MSE")
@@ -513,11 +513,11 @@ class DifferentialDivergenceLoss(nn.Module):
         pred_diff = pred[:, 1:,:,:,:] - pred[:, :-1,:,:,:]
         true_diff = true[:, 1:,:,:,:] - true[:, :-1,:,:,:]
         # multiply pred_diff and true_diff with static_ch
-        pred_diff = pred_diff * static_ch[:, :,:,:,:]
-        true_diff = true_diff * static_ch[:, :,:,:,:]
+        pred_diff = pred_diff 
+        true_diff = true_diff 
         #pdb.set_trace()
         std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
-        std_loss = torch.mean(std_loss * static_ch[:,0])
+        std_loss = torch.mean(std_loss)
 
         #std_loss = ccc_loss(true,pred, static_ch)
                 # square the difference and sum over all pixels
@@ -531,7 +531,7 @@ class DifferentialDivergenceLoss(nn.Module):
             # pred_diff1 = ((pred_diff)**2).sum(dim=1, keepdim=True)
             # true_diff1 = ((true_diff)**2).sum(dim=1, keepdim=True)
             check_loss = F.mse_loss(pred_diff1, true_diff1, reduction='none')
-            check_loss = torch.mean(check_loss * static_ch)
+            check_loss = torch.mean(check_loss)
 
             sum_loss = F.mse_loss(pred_diff1, true_diff1)
 
@@ -562,7 +562,7 @@ class DifferentialDivergenceLoss(nn.Module):
             print (sum_loss)
             print (sum_l1_loss)
             c_loss = ccc_loss(true[:,:,:,self.pixels[:,0], self.pixels[:,1]],pred[:,:,:,self.pixels[:,0], self.pixels[:,1]],
-                            static_ch[:,:,:,self.pixels[:,0], self.pixels[:,1]])
+                            )
             print (c_loss)
 
         if train_run==False:

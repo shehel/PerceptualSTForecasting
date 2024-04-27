@@ -22,8 +22,8 @@ class SimVP_Model(nn.Module):
         T, C, H, W = in_shape  # T is pre_seq_length
         H, W = int(H / 2**(N_S/2)), int(W / 2**(N_S/2))  # downsample 1 / 2**(N_S/2)
         act_inplace = False
-        self.enc = Encoder(96, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
-        self.dec = Decoder(hid_T, 96, N_S, spatio_kernel_dec, act_inplace=act_inplace)
+        self.enc = Encoder(12, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
+        self.dec = Decoder(64, 12, N_S, spatio_kernel_dec, act_inplace=act_inplace)
 
         #self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec)
         # self.enc_s = Encoder(1, 16, 2, spatio_kernel_enc)
@@ -48,7 +48,7 @@ class SimVP_Model(nn.Module):
 
 
         else:
-            self.hid = MidMetaNet(hid_T, hid_T, N_T,
+            self.hid = MidMetaNet(64, hid_T, N_T,
                 input_resolution=(H, W), model_type=model_type,
                    mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
 

@@ -42,7 +42,7 @@ def get_ani(mat):
     fig, ax = plt.subplots(figsize=(8, 8))
     imgs = []
     for img in mat:
-        img = ax.imshow(img, animated=True, vmax=30, vmin=0)
+        img = ax.imshow(img, animated=True, vmax=2, vmin=-2)
         imgs.append([img])
     ani = animation.ArtistAnimation(fig, imgs, interval=1000, blit=True, repeat_delay=3000)
     plt.close()
@@ -418,38 +418,39 @@ class BaseExperiment(object):
         # subtract results['inputs'] by its temporal mean along first dimension using numpy
         #results['inputs'] = results['inputs'] - np.mean(results['inputs'], axis=1, keepdims=True)
 
-        plot_tmaps(results['trues'][200,:,2,:,:,np.newaxis], results['preds'][200,:,2,:,:,np.newaxis],
-                    results['inputs'][200,:,2,:,:,np.newaxis], epoch, logger)
+        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,:,0,:,:,np.newaxis],
+                    results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
 
         #x_values = range(len(results['trues'][19, :, 0, 32, 32]))
-        x_values = range(len(results['trues'][19, :, 2, 64, 64]))
+        x_values = range(len(results['trues'][19, :, 0, 0, 0]))
         shifted_x_values = [x - shift_amount for x in x_values]  # Shift x-values for 'inputs'
 
         # Define the list of pixel coordinates
         #pixel_list = [(32, 32), (19, 24), (19, 12)]
         #pixel_list = [(64, 64), (51, 56), (51, 40)]
         #pixel_list = [(64, 64), (64, 65), (66, 92), (53, 46), (62, 49), (76, 90), (35, 45), (36, 65), (56, 46), (58, 69), (44, 95), (89, 81)]
-        pixel_list = [(64, 64),
-            (64, 65),
-            (36, 83),
-            (63, 86),
-            (67, 94),
-            (58, 49),
-            (50, 37),
-            (42, 95),
-            (60, 90)]
-        # Iterate over each time step for which we want to visualize the data
+        pixel_list = [(10, 10),
+            (5, 25),
+            (18, 33),
+            (11, 46),
+            (20, 24),
+            (30, 19),
+            (24, 7),
+            (18, 5),
+            (10, 50)]
+        
+                # Iterate over each time step for which we want to visualize the data
         for i in [10, 50, 100, 150]:
             # Iterate over each pixel coordinate
             for pixel in pixel_list:
                 y, x = pixel  # Unpack the tuple into x and y coordinates
 
                 # Plot the inputs, true values, and predictions for each pixel
-                plt.plot(shifted_x_values, results['inputs'][i, :, 2, y, x], label=f"Inputs at {pixel}")
-                plt.plot(x_values, results['trues'][i, :, 2, y, x], label=f"True at {pixel}")
-                plt.plot(x_values, results['preds'][i, :, 2, y, x], label=f"Preds_m at {pixel}")
+                plt.plot(shifted_x_values, results['inputs'][i, :, 0, y, x], label=f"Inputs at {pixel}")
+                plt.plot(x_values, results['trues'][i, :, 0, y, x], label=f"True at {pixel}")
+                plt.plot(x_values, results['preds'][i, :, 0, y, x], label=f"Preds_m at {pixel}")
 
                 # Show the legend and get the current figure
                 plt.legend()
@@ -473,8 +474,8 @@ class BaseExperiment(object):
             y, x = pixel  # Unpack the tuple into x and y coordinates
 
             # Plot the true values and predictions over the specified range for each pixel
-            plt.plot(results['trues'][:240, 0, 2, y, x], label=f"True at {pixel}")
-            plt.plot(results['preds'][:240, 0, 2, y, x], label=f"Preds_m at {pixel}")
+            plt.plot(results['trues'][:240, 0, 0, y, x], label=f"True at {pixel}")
+            plt.plot(results['preds'][:240, 0, 0, y, x], label=f"Preds_m at {pixel}")
 
             # Show the legend and get the current figure
             plt.legend()

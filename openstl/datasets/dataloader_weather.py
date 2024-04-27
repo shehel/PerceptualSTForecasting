@@ -8,7 +8,7 @@ import torch
 import torch.nn.functional as F
 from torch.utils.data import Dataset
 from openstl.datasets.utils import create_loader
-
+from clearml import Dataset as cdset
 try:
     import xarray as xr
 except ImportError:
@@ -123,6 +123,8 @@ class WeatherBenchDataset(Dataset):
 
         self.valid_idx = np.array(
             range(-idx_in[0], self.data.shape[0]-idx_out[-1]-1))
+
+        self.perm = False
 
     def _load_data_xarray(self, data_name, single_variant=True):
         """Loading full data with xarray"""
@@ -245,6 +247,11 @@ def load_data(batch_size,
               **kwargs):
 
     assert data_split in ['5_625', '2_8125', '1_40625']
+    try:
+        data_root = cdset.get(dataset_id="15f21d90cff7427493ffc4259405d59f").get_local_copy()
+        #data_root = cdset.get(dataset_id="3db5889f347f4bb1ba4be90b0062673d").get_local_copy()
+    except:
+        print("Could not find dataset in clearml server. Exiting!")
     _dataroot = osp.join(data_root, f'weather_{data_split}deg')
     weather_dataroot = _dataroot if osp.exists(_dataroot) else osp.join(data_root, 'weather')
 

@@ -28,7 +28,7 @@ class SimVP(Base_method):
         self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
         self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1.0,0,0,0,0.0])
+        self.adapt_weights = torch.tensor([0.8,0,0,0,0.1])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -89,13 +89,13 @@ class SimVP(Base_method):
 
         end = time.time()
 
-        for batch_x, batch_y, batch_static in train_pbar:
+        for batch_x, batch_y in train_pbar:
 
             data_time_m.update(time.time() - end)
             self.model_optim.zero_grad()
 
             if not self.args.use_prefetcher:
-                batch_x, batch_y, batch_static = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device)
+                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
@@ -112,7 +112,7 @@ class SimVP(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,0::2,:,:], batch_y[:,:,0::2,:,:], batch_static)
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,:,:,:], batch_y[:,:,:,:,:])
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
                 loss = (
                         (self.adapt_weights[0] * mse_loss) +
