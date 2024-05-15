@@ -172,7 +172,7 @@ class T4CDataset(Dataset):
         ])
 
 
-        self.perm = True
+        self.perm = False
 
     def __len__(self):
         return self.X.shape[0]
