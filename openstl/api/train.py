@@ -299,7 +299,7 @@ class BaseExperiment(object):
         """Plot the basic infomation of supported methods"""
         T, C, H, W = self.args.in_shape
         if self.args.method in ['simvp', 'unet', 'tau', 'simvpresid', 'unetresid', 'simvpgan']:
-            input_dummy = torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device)
+            input_dummy = [torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device), torch.ones(1, 2).to(self.device)]
         elif self.args.method == 'simvprnn':
             Hp, Wp = 32, 32
             Cp = 32
@@ -418,7 +418,7 @@ class BaseExperiment(object):
         # subtract results['inputs'] by its temporal mean along first dimension using numpy
         #results['inputs'] = results['inputs'] - np.mean(results['inputs'], axis=1, keepdims=True)
 
-        plot_tmaps(results['trues'][200,:,2,:,:,np.newaxis], results['preds'][200,:,2,:,:,np.newaxis],
+        plot_tmaps(results['trues'][200,:,2,:,:,np.newaxis], results['preds'][200,1,:,2,:,:,np.newaxis],
                     results['inputs'][200,:,2,:,:,np.newaxis], epoch, logger)
 
         shift_amount = 12  # Define the amount by which you want to shift the 'inputs' on the x-axis
@@ -449,7 +449,9 @@ class BaseExperiment(object):
                 # Plot the inputs, true values, and predictions for each pixel
                 plt.plot(shifted_x_values, results['inputs'][i, :, 2, y, x], label=f"Inputs at {pixel}")
                 plt.plot(x_values, results['trues'][i, :, 2, y, x], label=f"True at {pixel}")
-                plt.plot(x_values, results['preds'][i, :, 2, y, x], label=f"Preds_m at {pixel}")
+                plt.plot(x_values, results['preds'][i, 0,:, 2, y, x], label=f"Preds_l at {pixel}")
+                plt.plot(x_values, results['preds'][i, 1,:, 2, y, x], label=f"Preds_m at {pixel}")
+                plt.plot(x_values, results['preds'][i, 2,:, 2, y, x], label=f"Preds_h at {pixel}")
 
                 # Show the legend and get the current figure
                 plt.legend()
@@ -474,7 +476,9 @@ class BaseExperiment(object):
 
             # Plot the true values and predictions over the specified range for each pixel
             plt.plot(results['trues'][:240, 0, 2, y, x], label=f"True at {pixel}")
-            plt.plot(results['preds'][:240, 0, 2, y, x], label=f"Preds_m at {pixel}")
+            plt.plot(results['preds'][:240, 0,0, 2, y, x], label=f"Preds_l at {pixel}")
+            plt.plot(results['preds'][:240, 1,0, 2, y, x], label=f"Preds_m at {pixel}")
+            plt.plot(results['preds'][:240, 2,0, 2, y, x], label=f"Preds_h at {pixel}")
 
             # Show the legend and get the current figure
             plt.legend()

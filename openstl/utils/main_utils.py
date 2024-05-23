@@ -349,21 +349,52 @@ class QuantileRegressionLoss(nn.Module):
     def __init__(self, params):
         super(QuantileRegressionLoss, self).__init__()
 
-        self.q_lo_loss = PinballLoss(quantile=params["q_lo"])
-        self.q_hi_loss = PinballLoss(quantile=params["q_hi"])
-        self.mse_loss = nn.MSELoss()
+        self.q_lo_loss = PinballLoss()
+        self.q_hi_loss = PinballLoss()
+        self.mse_loss = PinballLossFixed(quantile=0.5)
 
         self.q_lo_weight = params['q_lo_weight']
         self.q_hi_weight = params['q_hi_weight']
         self.mse_weight = params['mse_weight']
 
-    def forward(self, pred, target, static_ch, std_ch):
-        loss = self.q_lo_weight * self.q_lo_loss(pred[:,0,:,:,:].squeeze(), target.squeeze(), static_ch, std_ch) + \
-               self.q_hi_weight * self.q_hi_loss(pred[:,2,:,:,:].squeeze(), target.squeeze(), static_ch, std_ch) + \
-               self.mse_weight * self.mse_loss(pred[:,1,:,:,:].squeeze(), target.squeeze())
-        return loss
+    def forward(self, pred, target, static_ch, quantile):
+        lo_loss = self.q_lo_weight * self.q_lo_loss(pred[:,0,:,:,:].squeeze(), target.squeeze(), quantile[:,0:1], static_ch)
+        hi_loss = self.q_hi_weight * self.q_hi_loss(pred[:,2,:,:,:].squeeze(), target.squeeze(), quantile[:,1:2], static_ch)
+        m_loss = self.mse_weight * self.mse_loss(pred[:,1,:,:,:].squeeze(), target.squeeze(), static_ch)
+        #m_loss = self.mse_weight * torch.mean(F.mse_loss(pred[:,1].squeeze(), target.squeeze(), reduction='none') * static_ch)
+        loss = lo_loss + hi_loss + m_loss
+        return loss, hi_loss, lo_loss, m_loss
 
 class PinballLoss():
+    def __init__(self, reduction='mean'):
+        self.reduction = reduction
+
+    def __call__(self, output, target, quantile, static_ch):
+        assert output.shape == target.shape, "Output and target must have the same shape."
+        assert output.shape[0] == quantile.shape[0], "Quantile must match the batch size of output and target."
+
+        loss = torch.zeros_like(target, dtype=torch.float)
+        error = output - target
+        error = error*static_ch
+
+        smaller_index = error < 0
+        bigger_index = error > 0
+
+        # Apply quantile to each batch element
+        quantile_expanded = quantile.view(-1, 1, 1, 1, 1).expand_as(error)  # Adjust dimensions to match error
+
+        loss[smaller_index] = quantile_expanded[smaller_index] * torch.abs(error[smaller_index])
+        loss[bigger_index] = (1 - quantile_expanded[bigger_index]) * torch.abs(error[bigger_index])
+
+        if self.reduction == 'sum':
+            loss = loss.sum()
+        elif self.reduction == 'mean':
+            loss = loss.mean()
+
+        return loss
+
+
+class PinballLossFixed():
 
   def __init__(self, quantile=0.10, reduction='mean'):
       self.quantile = quantile
@@ -371,10 +402,11 @@ class PinballLoss():
       assert self.quantile < 1
       self.reduction = reduction
 
-  def __call__(self, output, target, static_ch, std_ch):
+  def __call__(self, output, target, static_ch):
       assert output.shape == target.shape
       loss = torch.zeros_like(target, dtype=torch.float)
       error = (output - target)
+      error = error*static_ch
       smaller_index = error < 0
       bigger_index = 0 < error
       loss[smaller_index] = self.quantile * ((abs(error))[smaller_index])
@@ -404,7 +436,7 @@ def ccc(gold, pred):
 def ccc_loss(gold, pred, mask):
     return (1. - torch.mean(ccc(gold, pred) * mask[:]))
 class DifferentialDivergenceLoss(nn.Module):
-    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=0.000002):
+    def __init__(self, tau=1, epsilon=1e-8, w1=1, w2 =1, w3=1, w4=1, w5=1):
         super(DifferentialDivergenceLoss, self).__init__()
         self.tau = tau
         self.epsilon = epsilon
@@ -428,11 +460,11 @@ class DifferentialDivergenceLoss(nn.Module):
         self.pixels = self.pixel_list[:]
         self.pixels = torch.tensor(self.pixels, dtype=torch.long)
 
-    def forward(self, pred, true, static_ch, train_run=True):
+    def forward(self, pred, true, static_ch, quantiles, train_run=True):
         #true_std = torch.std(true, dim=1, keepdim=False)
         #true_std = true_std/((torch.max(true_std)+self.epsilon))
-        #mse_loss = self.q_loss(pred, true, static_ch[:,0], true_std)
-        #pred = pred[:,1,:,:,:]
+        mse_loss, reg_std, reg_mse, std_loss = self.q_loss(pred, true, static_ch[:,], quantiles)
+        pred = pred[:,1,:,:,:]
         # mae loss using functional
         #std_loss = self.ssim(pred, true)
         #mse_loss = dilate_loss(pred[:,:,0,64:65,64], true[:,:,0,64:65,64], alpha=0.1, gamma=0.001, device=pred.device)[0]
@@ -460,126 +492,125 @@ class DifferentialDivergenceLoss(nn.Module):
         #pred = pred * static_ch
         #true = true * static_ch
         #pdb.set_trace()
-        mse_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
+        sum_loss = torch.mean(F.mse_loss(pred, true, reduction='none') * static_ch)
         mae_loss = torch.mean(F.l1_loss(pred, true, reduction='none') * static_ch)
-        if train_run==False:
-            print ("L1 ", mae_loss)
-            print ("MSE")
-            for i in self.pixel_list:
-                mse_px = F.mse_loss(pred[:,:,:,i[0],i[1]], true[:,:,:,i[0],i[1]])
-                print (i, mse_px)
+        # if train_run==False:
+        #     print ("L1 ", mae_loss)
+        #     print ("MSE")
+        #     for i in self.pixel_list:
+        #         mse_px = F.mse_loss(pred[:,:,:,i[0],i[1]], true[:,:,:,i[0],i[1]])
+        #         print (i, mse_px)
 
-            print ("STD")
-            for i in self.pixel_list:
-                std_px = F.mse_loss(torch.std(pred[:,:,:,i[0],i[1]], dim=1), torch.std(true[:,:,:,i[0],i[1]], dim=1))
-                print (i, std_px)
-        #sum_loss = mse_loss
-        if train_run==False:
-            print ("DILATE")
-            # for i in self.pixel_list:
+        #     print ("STD")
+        #     for i in self.pixel_list:
+        #         std_px = F.mse_loss(torch.std(pred[:,:,:,i[0],i[1]], dim=1), torch.std(true[:,:,:,i[0],i[1]], dim=1))
+        #         print (i, std_px)
+        # #sum_loss = mse_loss
+        # if train_run==False:
+        #     print ("DILATE")
+        #     # for i in self.pixel_list:
 
-            #     sampled_true, sampled_pred = sample_pixels_efficient(true, pred, [i])
-            #     sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
-            #     sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
-            #     reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
-            #     print (i, reg_mse, reg_std, ((reg_mse)*0.001 + reg_std))
-            sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixel_list)
-            sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
-            sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
-            reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
+        #     #     sampled_true, sampled_pred = sample_pixels_efficient(true, pred, [i])
+        #     #     sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
+        #     #     sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
+        #     #     reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
+        #     #     print (i, reg_mse, reg_std, ((reg_mse)*0.001 + reg_std))
+        #     sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixel_list)
+        #     sampled_true = (sampled_true - sampled_true.mean(dim=1, keepdim=True)) / (sampled_true.std(dim=1, keepdim=True) + self.epsilon)
+        #     sampled_pred = (sampled_pred - sampled_pred.mean(dim=1, keepdim=True)) / (sampled_pred.std(dim=1, keepdim=True) + self.epsilon)
+        #     reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
 
-        else:
-            # sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
-            # reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
+        # else:
+        #     # sampled_true, sampled_pred = sample_pixels_efficient(true, pred, self.pixels)
+        #     # reg_mse, reg_std = dilate_loss(sampled_pred, sampled_true, alpha=0.1, gamma=0.001, device=pred.device)
 
-            reg_mse = mse_loss
-            reg_std = mse_loss
-        #pred_prob = F.softmax(sum_1, dim=1)
-        #true_prob = F.softmax(sum_2, dim=1)
+        #     reg_mse = mse_loss
+        #     reg_std = mse_loss
+        # #pred_prob = F.softmax(sum_1, dim=1)
+        # #true_prob = F.softmax(sum_2, dim=1)
 
-        # do kl div loss on pred_prob and true_prob using F.kl_div
-        #sum_loss = F.kl_div(torch.log(pred_prob + self.epsilon), true_prob, reduction='batchmean')
+        # # do kl div loss on pred_prob and true_prob using F.kl_div
+        # #sum_loss = F.kl_div(torch.log(pred_prob + self.epsilon), true_prob, reduction='batchmean')
 
+        # # std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
+        # # std_loss = torch.mean(std_loss * static_ch[:,0])
+
+        # #sum_loss = std_loss
+        # #sum_loss = F.mse_loss(torch.sum(pred, dim=1), torch.sum(true,dim=1))
+        # #reg_std = modified_total_variation_loss(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
+        # #reg_std = modified_total_variation_loss(mu1[:,:,0]*static_ch[:,0],
+        #  #                                       mu2[:,:,0]*static_ch[:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
+        # #std_loss = SSIM(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
+        # #sum_loss = mse_of_spatial_cov(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
+        # pred_diff = pred[:, 1:,:,:,:] - pred[:, :-1,:,:,:]
+        # true_diff = true[:, 1:,:,:,:] - true[:, :-1,:,:,:]
+        # # multiply pred_diff and true_diff with static_ch
+        # pred_diff = pred_diff * static_ch[:, :,:,:,:]
+        # true_diff = true_diff * static_ch[:, :,:,:,:]
+        # #pdb.set_trace()
         # std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
         # std_loss = torch.mean(std_loss * static_ch[:,0])
-
-        #sum_loss = std_loss
-        #sum_loss = F.mse_loss(torch.sum(pred, dim=1), torch.sum(true,dim=1))
-        #reg_std = modified_total_variation_loss(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
-        #reg_std = modified_total_variation_loss(mu1[:,:,0]*static_ch[:,0],
-         #                                       mu2[:,:,0]*static_ch[:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
-        #std_loss = SSIM(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
-        #sum_loss = mse_of_spatial_cov(pred[:,:,0], true[:,:,0])#F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1))
-        pred_diff = pred[:, 1:,:,:,:] - pred[:, :-1,:,:,:]
-        true_diff = true[:, 1:,:,:,:] - true[:, :-1,:,:,:]
-        # multiply pred_diff and true_diff with static_ch
-        pred_diff = pred_diff * static_ch[:, :,:,:,:]
-        true_diff = true_diff * static_ch[:, :,:,:,:]
-        #pdb.set_trace()
-        std_loss = F.mse_loss(torch.std(pred, dim=1), torch.std(true, dim=1), reduction='none')
-        std_loss = torch.mean(std_loss * static_ch[:,0])
 
         #std_loss = ccc_loss(true,pred, static_ch)
                 # square the difference and sum over all pixels
         # take the absolute value of the difference
         
-        if train_run==True:
-            # get the abs value of the diff and sum across 1st dimension preserving the shape
-            #pdb.set_trace()
-            pred_diff1 = ((pred_diff)**2).sum(dim=1, keepdim=True)
-            true_diff1 = ((true_diff)**2).sum(dim=1, keepdim=True)
-            # pred_diff1 = ((pred_diff)**2).sum(dim=1, keepdim=True)
-            # true_diff1 = ((true_diff)**2).sum(dim=1, keepdim=True)
-            check_loss = F.mse_loss(pred_diff1, true_diff1, reduction='none')
-            check_loss = torch.mean(check_loss * static_ch)
+        # if train_run==True:
+        #     # get the abs value of the diff and sum across 1st dimension preserving the shape
+        #     #pdb.set_trace()
+        #     pred_diff1 = ((pred_diff)**2).sum(dim=1, keepdim=True)
+        #     true_diff1 = ((true_diff)**2).sum(dim=1, keepdim=True)
+        #     # pred_diff1 = ((pred_diff)**2).sum(dim=1, keepdim=True)
+        #     # true_diff1 = ((true_diff)**2).sum(dim=1, keepdim=True)
+        #     check_loss = F.mse_loss(pred_diff1, true_diff1, reduction='none')
+        #     check_loss = torch.mean(check_loss * static_ch)
 
-            sum_loss = F.mse_loss(pred_diff1, true_diff1)
+        #     sum_loss = F.mse_loss(pred_diff1, true_diff1)
 
-            #pred_diff = (pred_diff**2).sum(dim=1, keepdim=True)
-            #true_diff = (true_diff**2).sum(dim=1, keepdim=True)
+        #     #pred_diff = (pred_diff**2).sum(dim=1, keepdim=True)
+        #     #true_diff = (true_diff**2).sum(dim=1, keepdim=True)
 
 
-            # 
-
-            
-            #pred_diff = (pred_diff**2).sum()/(static_ch[0].sum()*pred.shape[0]*pred.shape[1])
-            #true_diff = (true_diff**2).sum()/(static_ch[0].sum()*pred.shape[0]*pred.shape[1])
-        # get the abs value of the diff
-        # take mean squared error of the difference
-            #sum_loss = F.mse_loss(pred_diff, true_diff, reduction='mean')
-        else:
-            print ("Sum Total")
-            pred_diffx = (pred_diff**2).sum(dim=1, keepdim=True)
-            true_diffx = (true_diff**2).sum(dim=1, keepdim=True)
-            pred_diffy = (torch.abs(pred_diff)).sum(dim=1, keepdim=True)
-            true_diffy = (torch.abs(true_diff)).sum(dim=1, keepdim=True)
 
             
-            # get the abs value of the diff
-            sum_l1_loss = F.l1_loss(pred_diffx, true_diffx)
+        #     #pred_diff = (pred_diff**2).sum()/(static_ch[0].sum()*pred.shape[0]*pred.shape[1])
+        #     #true_diff = (true_diff**2).sum()/(static_ch[0].sum()*pred.shape[0]*pred.shape[1])
+        # # get the abs value of the diff
+        # # take mean squared error of the difference
+        #     #sum_loss = F.mse_loss(pred_diff, true_diff, reduction='mean')
+        # else:
+        #     print ("Sum Total")
+        #     pred_diffx = (pred_diff**2).sum(dim=1, keepdim=True)
+        #     true_diffx = (true_diff**2).sum(dim=1, keepdim=True)
+        #     pred_diffy = (torch.abs(pred_diff)).sum(dim=1, keepdim=True)
+        #     true_diffy = (torch.abs(true_diff)).sum(dim=1, keepdim=True)
 
-            sum_loss = F.mse_loss(pred_diffx, true_diffx)
-            print (sum_loss)
-            print (sum_l1_loss)
-            c_loss = ccc_loss(true[:,:,:,self.pixels[:,0], self.pixels[:,1]],pred[:,:,:,self.pixels[:,0], self.pixels[:,1]],
-                            static_ch[:,:,:,self.pixels[:,0], self.pixels[:,1]])
-            print (c_loss)
+            
+        #     # get the abs value of the diff
+        #     sum_l1_loss = F.l1_loss(pred_diffx, true_diffx)
 
-        if train_run==False:
+        #     sum_loss = F.mse_loss(pred_diffx, true_diffx)
+        #     print (sum_loss)
+        #     print (sum_l1_loss)
+        #     c_loss = ccc_loss(true[:,:,:,self.pixels[:,0], self.pixels[:,1]],pred[:,:,:,self.pixels[:,0], self.pixels[:,1]],
+        #                     static_ch[:,:,:,self.pixels[:,0], self.pixels[:,1]])
+        #     print (c_loss)
 
-            print ("Sum")
-            for i in self.pixel_list:
-                pred_diff = pred[:, 1:,:,i[0],i[1]] - pred[:, :-1,:,i[0],i[1]]
-                true_diff = true[:, 1:,:,i[0],i[1]] - true[:, :-1,:,i[0],i[1]]
-                # square the difference and sum over all pixels
-                #pred_diff = torch.abs(pred_diff).sum(dim=1, keepdim=True)
-                #true_diff = torch.abs(true_diff).sum(dim=1, keepdim=True)
-                pred_diff = (pred_diff**2).sum(dim=1, keepdim=True)
-                true_diff = (true_diff**2).sum(dim=1, keepdim=True)
-                # get the abs value of the diff
-                print (i, F.mse_loss(pred_diff, true_diff))
-                print (i, F.l1_loss(pred_diff, true_diff))
-                # squared error
+        # if train_run==False:
+
+        #     print ("Sum")
+        #     for i in self.pixel_list:
+        #         pred_diff = pred[:, 1:,:,i[0],i[1]] - pred[:, :-1,:,i[0],i[1]]
+        #         true_diff = true[:, 1:,:,i[0],i[1]] - true[:, :-1,:,i[0],i[1]]
+        #         # square the difference and sum over all pixels
+        #         #pred_diff = torch.abs(pred_diff).sum(dim=1, keepdim=True)
+        #         #true_diff = torch.abs(true_diff).sum(dim=1, keepdim=True)
+        #         pred_diff = (pred_diff**2).sum(dim=1, keepdim=True)
+        #         true_diff = (true_diff**2).sum(dim=1, keepdim=True)
+        #         # get the abs value of the diff
+        #         print (i, F.mse_loss(pred_diff, true_diff))
+        #         print (i, F.l1_loss(pred_diff, true_diff))
+        #         # squared error
 
         #true_diff = true_diff
         #pred_diff = pred_diff.view(pred_diff.shape[0], pred_diff.shape[1], -1)

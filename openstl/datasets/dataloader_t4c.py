@@ -172,7 +172,7 @@ class T4CDataset(Dataset):
         ])
 
 
-        self.perm = True
+        self.perm = False
 
     def __len__(self):
         return self.X.shape[0]
@@ -234,10 +234,10 @@ class T4CDataset(Dataset):
         #two_hours = two_hours.astype(np.float32)
         day = get_day_of_week(self.file_list[file_idx])
 
-        if day == "Saturday" or day == "Sunday":
-            two_hours = (two_hours - self.weekend_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1])#/(self.weekend_std[start_hour:start_hour + self.pre_seq_length * 2 + 1]+1e-6)
-        else:
-            two_hours = (two_hours - self.weekday_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1])#/(self.weekday_std[start_hour:start_hour + self.pre_seq_length * 2 + 1]+1e-6)
+        # if day == "Saturday" or day == "Sunday":
+        #     two_hours = (two_hours - self.weekend_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1])#/(self.weekend_std[start_hour:start_hour + self.pre_seq_length * 2 + 1]+1e-6)
+        # else:
+        #     two_hours = (two_hours - self.weekday_mean[start_hour:start_hour + self.pre_seq_length * 2 + 1])#/(self.weekday_std[start_hour:start_hour + self.pre_seq_length * 2 + 1]+1e-6)
 
         #two_hours = two_hours
         #two_hours = (two_hours - np.min(two_hours)) * (200 / (np.max(two_hours) - np.min(two_hours)))
@@ -254,14 +254,16 @@ class T4CDataset(Dataset):
 
             two_hours = two_hours[:,perm[dir_select],:,:]
 
-        # TODO
+        # sample two quantiles between 0 and 1. It should be a multiple of 5 and shouldn't include 0.5. Lower quantile should be smaller than 0.5 and higher quantile should be larger than 0.5
         if self.test:
-            random_int_x = 32
-            random_int_y = 32
+            low_quantile = 0.05
+            high_quantile = 0.95
         else:
-            random_int_x = 32
-            random_int_y = 32
+            low_quantile = random.choice([0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45])
+            high_quantile = random.choice([0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95])
+        # make it into a vector
 
+        quantiles = np.array([low_quantile, high_quantile])
             # random_int_x = random.randint(0, 300)
             # random_int_y = random.randint(0, 300)
         #two_hours = two_hours[:,:,random_int_x:random_int_x + 64,
@@ -321,19 +323,20 @@ class T4CDataset(Dataset):
 
         # zero out all but a 5x5 patch around 64,64 in static_ch
         #static_ch = static_ch[0,0,59:69,59:69]
-        return dynamic_input, output_data, static_ch
+        return dynamic_input, output_data, static_ch, quantiles
 
 def train_collate_fn(batch):
-    dynamic_input_batch, target_batch, static_batch = zip(*batch)
+    dynamic_input_batch, target_batch, static_batch, quantiles_batch = zip(*batch)
     dynamic_input_batch = np.stack(dynamic_input_batch, axis=0)
     static_batch = np.stack(static_batch, axis=0)
+    quantiles_batch = np.stack(quantiles_batch, axis=0)
     target_batch = np.stack(target_batch, axis=0)
     dynamic_input_batch = torch.from_numpy(dynamic_input_batch).float()
     target_batch = torch.from_numpy(target_batch).float()
     static_batch = torch.from_numpy(static_batch).float()
+    quantiles_batch = torch.from_numpy(quantiles_batch).float()
 
-
-    return dynamic_input_batch, target_batch, static_batch
+    return dynamic_input_batch, target_batch, static_batch, quantiles_batch
 
 
 def load_data(batch_size, val_batch_size, data_root,

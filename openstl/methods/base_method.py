@@ -267,10 +267,10 @@ class Base_method(object):
                         torch.cuda.empty_cache()
             data_loader.dataset.perm = True
         else:
-            for i, (batch_x, batch_y, batch_static) in enumerate(data_loader):
+            for i, (batch_x, batch_y, batch_static, batch_quantiles) in enumerate(data_loader):
                 with torch.no_grad():
-                    batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
-                    pred_y, trend = self._predict(batch_x, batch_y)
+                    batch_x, batch_y, batch_quantiles = batch_x.to(self.device), batch_y.to(self.device), batch_quantiles.to(self.device)
+                    pred_y, trend = self._predict([batch_x, batch_quantiles], batch_y)
                     #assert pred_y.shape == batch_y.shape
                     #assert trend.shape == batch_y.shape
                     #pred_y = pred_y + trend
@@ -281,7 +281,7 @@ class Base_method(object):
                 if gather_data:  # return raw datas
                     results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
                                             [batch_x[:,:,0::2,:,:].cpu().numpy(),
-                                        pred_y[:,:,0::2,:,:].cpu().numpy()*batch_static.cpu().numpy(),
+                                        pred_y[:,:,:,0::2,:,:].cpu().numpy()*batch_static.unsqueeze(1).cpu().numpy(),
                                         batch_y[:,:,0::2,:,:].cpu().numpy(),
                                         batch_static.cpu().numpy()])))
                 else:  # return metrics
@@ -318,12 +318,16 @@ class Base_method(object):
         trues = torch.tensor(results_all['trues'])
         #losses_m = self.criterion_cpu(preds, trues)
         static_ch = torch.tensor(results_all['static'])
+        # create quantiles tensor of batch_sizex2 with static_ch.shape[0] as batch_size and 2 channels where the first is always 0.05 and the second is always 0.95
+        quantiles = torch.zeros((static_ch.shape[0], 2))
+        quantiles[:,0] = 0.05
+        quantiles[:,1] = 0.95
 
         # set static_ch to be a zeros tensor with shape static_ch.shape
         #static_ch = torch.zeros_like(static_ch)
         #static_ch[:,:,0:1,64,64] = 1
         #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
-        losses_m= self.criterion(preds[:,:,:], trues[:,:,:], static_ch[:,:,:], train_run=False)
+        losses_m= self.criterion(preds[:,:,:], trues[:,:,:], static_ch[:,:,:], quantiles, train_run=False)
         #dilate = self.val_criterion(preds, trues, static_ch)
         results_all["loss"] = losses_m
         _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = losses_m

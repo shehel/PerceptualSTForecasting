@@ -13,6 +13,77 @@ from .layers import (HorBlock, ChannelAggregationFFN, MultiOrderGatedAggregation
 
 import pdb
 
+class FilmGen(nn.Module):
+    """ Multi-layer Perceptron to generate gamma and beta. """
+    def __init__(self, input_size, layer_sizes, output_size):
+        super(FilmGen, self).__init__()
+        layers = []
+        current_size = input_size
+        for size in layer_sizes:
+            layers.append(nn.Linear(current_size, size))
+            layers.append(nn.LeakyReLU())
+            current_size = size
+        layers.append(nn.Linear(current_size, output_size * 2))  # *2 for gamma and beta
+        self.network = nn.Sequential(*layers)
+
+    def forward(self, x):
+        output = self.network(x)
+        gamma, beta = output.chunk(2, dim=-1)  # Split the last dimension into gamma and beta
+        return gamma, beta
+
+def film(input, gamma, beta):
+    r"""Applies Feature-wise Linear Modulation to the incoming data.
+     See :class:`~torchcontrib.nn.FiLM` for details.
+    """
+    if input.dim() < 2:
+        raise ValueError("film expects input to be at least 2-dimensional, but "
+                         "got input of size {}".format(tuple(input.size())))
+    if gamma.dim() != 2 and gamma.size(0) == input.size(0) and gamma.size(1) == input.size(1):
+        raise ValueError("film expects gamma to be a 2-dimensional tensor of "
+                         "the same shape as the first two dimensions of input"
+                         "gamma of size {} and input of size {}"
+                         .format(tuple(gamma.size()), tuple(input.size())))
+    if beta.dim() != 2 and beta.size(0) == input.size(0) and beta.size(1) == input.size(1):
+        raise ValueError("film expects beta to be a 2-dimensional tensor of "
+                         "the same shape as the first two dimensions of input"
+                         "beta of size {} and input of size {}"
+                         .format(tuple(beta.size()), tuple(input.size())))
+    view_shape = list(input.size())
+    for i in range(2, len(view_shape)):
+        view_shape[i] = 1
+    return gamma.view(view_shape) * input + beta.view(view_shape)
+
+class FiLM(nn.Module):
+    r"""Applies Feature-wise Linear Modulation to the incoming data as described
+    in the paper `FiLM: Visual Reasoning with a General Conditioning Layer`_ .
+
+     .. math::
+        y_{n,c,*} = \gamma_{n, c} * x_{n,c,*} + \beta_{n,c},
+
+    where :math:`\gamma_{n,c}` and :math:`\beta_{n,c}` are scalars and
+    operations are broadcast over any additional dimensions of :math:`x`
+
+     Shape:
+        - Input: :math:`(N, C, *)` where :math:`*` means any number of additional
+          dimensions
+        - Gammas: :math:`(N, C)`
+        - Betas: :math:`(N, C)`
+        - Output: :math:`(N, C, *)`, same shape as the input
+
+     Examples::
+        >>> m = torchcontrib.nn.FiLM()
+        >>> input = e
+        >>> gamma = torch.randn(20)
+        >>> beta = torch.randn(20)
+        >>> output = m(input, gamma, beta)
+        >>> output.size()
+        torch.Size([128, 20, 4, 4])
+
+     .. _`FiLM: Visual Reasoning with a General Conditioning Layer`:
+        https://arxiv.org/abs/1709.07871
+    """
+    def forward(self, input, gamma, beta):
+        return film(input, gamma, beta)
 class BasicConv2d(nn.Module):
 
     def __init__(self,
@@ -24,8 +95,10 @@ class BasicConv2d(nn.Module):
                  dilation=1,
                  upsampling=False,
                  act_norm=False,
-                 act_inplace=True):
+                 act_inplace=True,
+                 filmed=False):
         super(BasicConv2d, self).__init__()
+        self.filmed = filmed
         self.act_norm = act_norm
         if upsampling is True:
             self.conv = nn.Sequential(*[
@@ -38,8 +111,13 @@ class BasicConv2d(nn.Module):
                 in_channels, out_channels, kernel_size=kernel_size,
                 stride=stride, padding=padding, dilation=dilation)
 
-        self.norm = nn.GroupNorm(2, out_channels)
+        if self.filmed:
+            self.norm = FiLM()
+        else:
+            self.norm = nn.GroupNorm(2, out_channels)
         #self.norm = nn.BatchNorm2d(out_channels)
+
+
         self.act = nn.SiLU(True)
         #self.act = nn.ReLU(inplace=act_inplace)
 
@@ -50,10 +128,15 @@ class BasicConv2d(nn.Module):
             trunc_normal_(m.weight, std=.02)
             nn.init.constant_(m.bias, 0)
 
-    def forward(self, x):
+    def forward(self, x, condi=None):
+        # if condi:
+        #     pdb.set_trace()
         y = self.conv(x)
         if self.act_norm:
-            y = self.act(self.norm(y))
+            if self.filmed:
+                y = self.act(self.norm(y, condi[0], condi[1]))
+            else:
+                y = self.act(self.norm(y))
         return y
 
 
@@ -66,7 +149,8 @@ class ConvSC(nn.Module):
                  downsampling=False,
                  upsampling=False,
                  act_norm=True,
-                 act_inplace=True):
+                 act_inplace=True,
+                 filmed=False):
         super(ConvSC, self).__init__()
 
         stride = 2 if downsampling is True else 1
@@ -74,10 +158,10 @@ class ConvSC(nn.Module):
 
         self.conv = BasicConv2d(C_in, C_out, kernel_size=kernel_size, stride=stride,
                                 upsampling=upsampling, padding=padding,
-                                act_norm=act_norm, act_inplace=act_inplace)
+                                act_norm=act_norm, act_inplace=act_inplace, filmed=filmed)
 
-    def forward(self, x):
-        y = self.conv(x)
+    def forward(self, x, condi=None):
+        y = self.conv(x, condi)
         return y
 
 ### 3D Conv
