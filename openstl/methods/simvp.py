@@ -6,7 +6,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import SimVP_Model
-from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
+from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
 from .base_method import Base_method
 
 from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
@@ -25,10 +25,9 @@ class SimVP(Base_method):
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
         self.criterion = DifferentialDivergenceLoss()
-        self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.3)
         self.iters_to_make_updates = 50
-        self.adapt_weights = torch.tensor([1,0,0,0,0.2])
+        self.adapt_weights = torch.tensor([1,0,0,0,1])
         self.component_1 = []
         self.component_2 = []
         self.component_3 = []
@@ -99,7 +98,18 @@ class SimVP(Base_method):
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
-                pred_y, _ = self._predict([batch_x, batch_quantiles])
+                # pred_y_m, _ = self._predict([batch_x, batch_quantiles[:,1]])
+                pred_y, _ = self._predict([batch_x, batch_quantiles[:,1]])
+                # pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0]])
+                # pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2]])
+                # # create a new dimension at axis 1
+                # pred_y_lo = pred_y_lo.unsqueeze(1)
+                # pred_y_m = pred_y_m.unsqueeze(1)
+                # pred_y_hi = pred_y_hi.unsqueeze(1)
+
+                # # combine the 3 predictions at a new dimension at axis 1
+                # pred_y = torch.cat((pred_y_lo, pred_y_m, pred_y_hi), dim=1)
+
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
                 #encoded = self.model.encode(batch_y)
@@ -112,16 +122,16 @@ class SimVP(Base_method):
                 #loss = self.loss_wgt*(mse_loss) + (self.loss_wgt)*reg_loss
                 #recon_loss = loss
                 #encoded_norms = loss
-                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,:,0::2,:,:], batch_y[:,:,0::2,:,:], batch_static[:,:,:], batch_quantiles)
+                _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:,0,0,0])
                 #
                 loss = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
-                loss = (
-                        (self.adapt_weights[0] * mse_loss) +
-                            ((1- self.adapt_weights[0]) * (
-                                (self.adapt_weights[-1]*sum_loss)+ ((1-self.adapt_weights[-1])*std_loss)
-                                )
-                            )
-                        )
+                # loss = (
+                #         (self.adapt_weights[0] * mse_loss) +
+                #             ((1- self.adapt_weights[0]) * (
+                #                 (self.adapt_weights[-1]*sum_loss)+ ((1-self.adapt_weights[-1])*std_loss)
+                #                 )
+                #             )
+                #         )
                 #loss = self.adapt_weights[0] * mse_loss + (1-self.adapt_weights[0]) * (reg_std)
 
                 #loss = self.adapt_weights[2] * std_div + (1-self.adapt_weights[2]) * (mse_div) + self.adapt_weights[0]*mse_loss

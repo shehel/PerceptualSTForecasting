@@ -134,7 +134,10 @@ class BasicConv2d(nn.Module):
         y = self.conv(x)
         if self.act_norm:
             if self.filmed:
-                y = self.act(self.norm(y, condi[0], condi[1]))
+                try:
+                    y = self.act(self.norm(y, condi[0], condi[1]))
+                except:
+                    pdb.set_trace()
             else:
                 y = self.act(self.norm(y))
         return y

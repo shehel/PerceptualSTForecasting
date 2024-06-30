@@ -248,7 +248,7 @@ class Base_method(object):
 
                     if gather_data:  # return raw datas
                         results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
-                                                [x_full[:,:,0::2,:,:].cpu().numpy(),
+                                                [x_full[:,:,:,:,:].cpu().numpy(),
                                                 pred_full[:,:,:,:,:].cpu().numpy()*batch_static.cpu().numpy(),
                                                 batch_y_full[:,:,:,:,:].cpu().numpy(),
                                                 batch_static.cpu().numpy()])))
@@ -270,7 +270,17 @@ class Base_method(object):
             for i, (batch_x, batch_y, batch_static, batch_quantiles) in enumerate(data_loader):
                 with torch.no_grad():
                     batch_x, batch_y, batch_quantiles = batch_x.to(self.device), batch_y.to(self.device), batch_quantiles.to(self.device)
-                    pred_y, trend = self._predict([batch_x, batch_quantiles], batch_y)
+                    pred_y, _ = self._predict([batch_x, batch_quantiles], batch_y)
+                #     pred_y_m, _ = self._predict([batch_x, batch_quantiles[:,1]])
+                #     pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0]])
+                #     pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2]])
+                # # create a new dimension at axis 1
+                #     pred_y_lo = pred_y_lo.unsqueeze(1)
+                #     pred_y_m = pred_y_m.unsqueeze(1)
+                #     pred_y_hi = pred_y_hi.unsqueeze(1)
+
+                # # combine the 3 predictions at a new dimension at axis 1
+                #     pred_y = torch.cat((pred_y_lo, pred_y_m, pred_y_hi), dim=1)
                     #assert pred_y.shape == batch_y.shape
                     #assert trend.shape == batch_y.shape
                     #pred_y = pred_y + trend
@@ -280,9 +290,9 @@ class Base_method(object):
 
                 if gather_data:  # return raw datas
                     results.append(dict(zip(['inputs', 'preds', 'trues', 'static'],
-                                            [batch_x[:,:,0::2,:,:].cpu().numpy(),
-                                        pred_y[:,:,:,0::2,:,:].cpu().numpy()*batch_static.unsqueeze(1).cpu().numpy(),
-                                        batch_y[:,:,0::2,:,:].cpu().numpy(),
+                                            [batch_x[:,:,:,:,:].cpu().numpy(),
+                                        pred_y[:,:,:,:,:,:].cpu().numpy()*batch_static.unsqueeze(1).cpu().numpy(),
+                                        batch_y[:,:,:,:,:].cpu().numpy(),
                                         batch_static.cpu().numpy()])))
                 else:  # return metrics
                     #eval_res, _ = metric(pred_y.cpu().numpy()*batch_static.numpy(), batch_y.cpu().numpy()*batch_static.numpy(),
@@ -314,14 +324,15 @@ class Base_method(object):
         #results['trues'] = results['trues'][:,0:1,4:5,70,65]
         preds = torch.tensor(results_all['preds'])
         # clip preds to be between -255 and 255
-        preds = torch.clamp(preds, -255, 255)
+        #preds = torch.clamp(preds, -255, 255)
         trues = torch.tensor(results_all['trues'])
         #losses_m = self.criterion_cpu(preds, trues)
         static_ch = torch.tensor(results_all['static'])
         # create quantiles tensor of batch_sizex2 with static_ch.shape[0] as batch_size and 2 channels where the first is always 0.05 and the second is always 0.95
-        quantiles = torch.zeros((static_ch.shape[0], 2))
+        quantiles = torch.zeros((static_ch.shape[0], 3))
         quantiles[:,0] = 0.05
-        quantiles[:,1] = 0.95
+        quantiles[:,1] = 0.5
+        quantiles[:,2] = 0.95
 
         # set static_ch to be a zeros tensor with shape static_ch.shape
         #static_ch = torch.zeros_like(static_ch)
@@ -331,15 +342,15 @@ class Base_method(object):
         #dilate = self.val_criterion(preds, trues, static_ch)
         results_all["loss"] = losses_m
         _, total_loss, mse_loss,reg_mse,reg_std,std_loss, sum_loss = losses_m
-#        results_all["loss"][0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
+        results_all["loss"][0] = self.adapt_weights[0] * mse_loss + self.adapt_weights[1] * reg_mse + self.adapt_weights[2] * reg_std + self.adapt_weights[3] * std_loss + self.adapt_weights[4] * sum_loss
 
-        results_all["loss"][0] = (
-                        (self.adapt_weights[0] * mse_loss) +
-                            ((1- self.adapt_weights[0]) * (
-                                (self.adapt_weights[-1]*sum_loss)+ ((1-self.adapt_weights[-1])*std_loss)
-                                )
-                            )
-                        )
+        # results_all["loss"][0] = (
+        #                 (self.adapt_weights[0] * mse_loss) +
+        #                     ((1- self.adapt_weights[0]) * (
+        #                         (self.adapt_weights[-1]*sum_loss)+ ((1-self.adapt_weights[-1])*std_loss)
+        #                         )
+        #                     )
+        #                 )
         #results_all["loss"][0] = (reg_mse)*0.001 + reg_std
         return results_all
 

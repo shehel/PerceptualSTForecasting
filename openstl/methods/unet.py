@@ -6,7 +6,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import SimVP_Model, UNet_Model, UNetQ_Model
-from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
+from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
 from .base_method import Base_method
 from openstl.core.optim_scheduler import get_optim_scheduler
 

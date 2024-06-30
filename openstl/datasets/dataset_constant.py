@@ -43,7 +43,7 @@ dataset_parameters = {
         'pre_seq_length': 4,
         'aft_seq_length': 4,
         'total_length': 8,
-        'metrics': ['mse', 'mae', 'ssim', 'psnr'],
+        'metrics': ['mse', 'mae'],
     },
     't4c': {
         'in_shape': [12, 8, 128, 128],

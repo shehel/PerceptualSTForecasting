@@ -258,12 +258,19 @@ class T4CDataset(Dataset):
         if self.test:
             low_quantile = 0.05
             high_quantile = 0.95
+
         else:
             low_quantile = random.choice([0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45])
-            high_quantile = random.choice([0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95])
+
+            #high_quantile = random.choice([0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95])
+            high_quantile = 1 - low_quantile
+        low_quantile = np.repeat(low_quantile, 32*32).reshape(1,32,32)
+        high_quantile = np.repeat(high_quantile, 32*32).reshape(1,32,32)
+        m_quantile = np.repeat(0.5, 32*32).reshape(1,32,32)
+        #quantile = random.choice([0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.5, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95])
         # make it into a vector
 
-        quantiles = np.array([low_quantile, high_quantile])
+        quantiles = np.array([low_quantile, m_quantile, high_quantile])
             # random_int_x = random.randint(0, 300)
             # random_int_y = random.randint(0, 300)
         #two_hours = two_hours[:,:,random_int_x:random_int_x + 64,
@@ -299,19 +306,25 @@ class T4CDataset(Dataset):
         static_ch[:,64-32:64+32,64-32:64+32] = inp_static_ch[:,64-32:64+32,64-32:64+32]
         static_ch = np.abs(static_ch)
         #pxs = 500
+        # ranges
+
         if self.test:
             # static_ch_m = find_largest(static_ch, pxs)
             # static_ch = static_ch * static_ch_m
-            static_ch = np.where(static_ch > 0, 1,0)
+            #static_ch = np.where(static_ch > 15, 1,0)
+            static_ch = np.where((static_ch > 0) & (static_ch < 1), 1, 0)
+
             a = 1
         else:
             # static_ch_m = find_largest(static_ch, pxs)
             # static_ch = static_ch * static_ch_m
-            static_ch = np.where(static_ch > 0, 1,0)
+
+            #static_ch = np.where((static_ch > 15) & (static_ch < 20), 1, 0)
+            #static_ch = np.where(static_ch > 0, 1,0)
             a = 1
 
         
-        static_ch[:,self.pixel_list[:, 0], self.pixel_list[:, 1]] = 1
+        #static_ch[:,self.pixel_list[:, 0], self.pixel_list[:, 1]] = 1
         static_ch = static_ch[np.newaxis, :,:, :]
         
 
@@ -334,6 +347,26 @@ def train_collate_fn(batch):
     dynamic_input_batch = torch.from_numpy(dynamic_input_batch).float()
     target_batch = torch.from_numpy(target_batch).float()
     static_batch = torch.from_numpy(static_batch).float()
+    ranges = [0,0,1,5,10,15]
+    ranges_l = [255,1,5,10,15,255]
+    # sample between 0 and 5
+    rng = random.randint(0,5)
+    # use torch equivalent of np.where((static_batch > ranges[rng]) & (static_batch < ranges[rng+1]), 1, 0)
+    static_batch = torch.where((static_batch > ranges[rng]) & (static_batch < ranges_l[rng]), 1, 0)
+    quantiles_batch = torch.from_numpy(quantiles_batch).float()
+
+    return dynamic_input_batch, target_batch, static_batch, quantiles_batch
+def test_collate_fn(batch):
+    dynamic_input_batch, target_batch, static_batch, quantiles_batch = zip(*batch)
+    dynamic_input_batch = np.stack(dynamic_input_batch, axis=0)
+    static_batch = np.stack(static_batch, axis=0)
+    quantiles_batch = np.stack(quantiles_batch, axis=0)
+    target_batch = np.stack(target_batch, axis=0)
+    dynamic_input_batch = torch.from_numpy(dynamic_input_batch).float()
+    target_batch = torch.from_numpy(target_batch).float()
+    static_batch = torch.from_numpy(static_batch).float()
+    # sample between 0 and 5
+    # use torch equivalent of np.where((static_batch > ranges[rng]) & (static_batch < ranges[rng+1]), 1, 0)
     quantiles_batch = torch.from_numpy(quantiles_batch).float()
 
     return dynamic_input_batch, target_batch, static_batch, quantiles_batch
@@ -384,13 +417,13 @@ def load_data(batch_size, val_batch_size, data_root,
                                                   batch_size=val_batch_size, shuffle=False,
                                                   pin_memory=True, drop_last=True,
                                                   num_workers=num_workers,
-                                                  collate_fn = train_collate_fn
+                                                  collate_fn = test_collate_fn
                                                   )
     dataloader_test = torch.utils.data.DataLoader(test_set,
                                                   batch_size=val_batch_size, shuffle=False,
                                                   pin_memory=True, drop_last=True,
                                                   num_workers=num_workers,
-                                                  collate_fn = train_collate_fn)
+                                                  collate_fn = test_collate_fn)
 
     return dataloader_train, dataloader_vali, dataloader_test
 

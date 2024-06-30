@@ -15,14 +15,15 @@ class SimVP_Model(nn.Module):
 
     """
 
-    def __init__(self, in_shape, hid_S=16, hid_T=256, N_S=4, N_T=4, model_type='gSTA',
+    def __init__(self, in_shape, hid_S=16, hid_T=384, N_S=4, N_T=4, model_type='gSTA',
                  mlp_ratio=8., drop=0.0, drop_path=0.0, spatio_kernel_enc=3,
                  spatio_kernel_dec=3, act_inplace=True, **kwargs):
         super(SimVP_Model, self).__init__()
         T, C, H, W = in_shape  # T is pre_seq_length
         H, W = int(H / 2**(N_S/2)), int(W / 2**(N_S/2))  # downsample 1 / 2**(N_S/2)
         act_inplace = False
-        self.gen = FilmGen(2, [128,256], 256)
+        self.gen1 = FilmGen(1, [16,32], 32)
+        self.gen2 = FilmGen(1, [64,384], 384)
         self.enc = Encoder(C, hid_S, N_S, spatio_kernel_enc, act_inplace=act_inplace)
         self.dec = Decoder(hid_S, C, N_S, spatio_kernel_dec, act_inplace=act_inplace)
 
@@ -52,29 +53,56 @@ class SimVP_Model(nn.Module):
             self.hid = MidMetaNet(T*hid_S, hid_T, N_T,
                 input_resolution=(H, W), model_type=model_type,
                    mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+            self.hid_lo = MidMetaNet(T*hid_S, hid_T, N_T,
+                input_resolution=(H, W), model_type=model_type,
+                   mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
+            self.hid_hi = MidMetaNet(T*hid_S, hid_T, N_T,
+                input_resolution=(H, W), model_type=model_type,
+                   mlp_ratio=mlp_ratio, drop=drop, drop_path=drop_path)
 
     def forward(self, inputs):
         x_raw = inputs[0]
         quantiles = inputs[1]
-        gamma,beta = self.gen(quantiles)
+        quantiles = None
+        # gamma1,beta1 = self.gen1(quantiles)
+        # gamma2,beta2 = self.gen2(quantiles)
+        # # duplicate gamma1 and beta1 12 times along a new axis at 1 and repeat gamma2 and beta2 12 times along a new axis at 1
 
+        # gamma1 = gamma1.unsqueeze(1).repeat(1,12,1)
+        # beta1 = beta1.unsqueeze(1).repeat(1,12,1)
+        # gamma1 = gamma1.reshape(-1,32)
+        # beta1 = beta1.reshape(-1,32)
+        gamma1,beta1 = None,None
+        gamma2,beta2 = None,None
         B, T, C, H, W = x_raw.shape
 
         # x = x_raw.reshape(B*T*C, 1, H, W)
         # x, skip = self.enc_s(x)
         # x = x.reshape(B*T, 16*C, 64, 64)
         # embed, skip1 = self.enc_sc(x)
+        # if B == 16:
+        #     pdb.set_trace()
         x = x_raw.reshape(B*T, C, H, W)
 
-        embed, skip = self.enc(x)
+        embed, skip = self.enc(x, [gamma1,beta1])
         _, C_, H_, W_ = embed.shape
 
         z = embed.view(B, T, C_, H_, W_)
 
-        encoded = self.hid(z, [gamma,beta])
+        encoded = self.hid(z, quantiles)
+        encoded_lo = self.hid_lo(z, quantiles)
+        encoded_hi = self.hid_hi(z, quantiles)
         hid = encoded.reshape(B*T, C_, H_, W_)
-        Y = self.dec(hid, skip)
+        hid_lo = encoded_lo.reshape(B*T, C_, H_, W_)
+        hid_hi = encoded_hi.reshape(B*T, C_, H_, W_)
+        Y_m = self.dec(hid, skip)
+        Y_lo = self.dec(hid_lo, skip)
+        Y_hi = self.dec(hid_hi, skip)
+        Y = torch.stack([Y_lo, Y_m, Y_hi], dim=1)
+        # use einops and arrange it as B Q T C H W
         Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
+        #Y = self.dec(hid, skip, [gamma1,beta1])
+        #Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
 
         #Y = Y.reshape(B, T, C, H, W)
         #
@@ -173,16 +201,16 @@ class Encoder(nn.Module):
         super(Encoder, self).__init__()
         self.enc = nn.Sequential(
               ConvSC(C_in, C_hid, spatio_kernel, downsampling=samplings[0],
-                     act_inplace=act_inplace),
+                     act_inplace=act_inplace, filmed=False),
             *[ConvSC(C_hid, C_hid, spatio_kernel, downsampling=s,
-                     act_inplace=act_inplace) for s in samplings[1:]]
+                     act_inplace=act_inplace, filmed=False) for s in samplings[1:]]
         )
 
-    def forward(self, x):  # B*4, 3, 128, 128
-        enc1 = self.enc[0](x)
+    def forward(self, x, condi):  # B*4, 3, 128, 128
+        enc1 = self.enc[0](x, condi)
         latent = enc1
         for i in range(1, len(self.enc)):
-            latent = self.enc[i](latent)
+            latent = self.enc[i](latent, condi)
         return latent, enc1
 
 
@@ -194,20 +222,20 @@ class Decoder(nn.Module):
         super(Decoder, self).__init__()
         self.dec = nn.Sequential(
             *[ConvSC(C_hid, C_hid, spatio_kernel, upsampling=s,
-                     act_inplace=act_inplace) for s in samplings[:-1]],
+                     act_inplace=act_inplace, filmed=False) for s in samplings[:-1]],
               ConvSC(C_hid, C_hid, spatio_kernel, upsampling=samplings[-1],
-                     act_inplace=act_inplace)
+                     act_inplace=act_inplace, filmed=False)
         )
         self.readout = nn.Conv2d(C_hid, C_out, 1)
-        self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
-        self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        # self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        # self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
 
-    def forward(self, hid, enc1=None):
+    def forward(self, hid, enc1=None, condi=None):
         for i in range(0, len(self.dec)-1):
-            hid = self.dec[i](hid)
-        Y = self.dec[-1](hid + enc1)
-        #Y = self.readout(Y)
-        Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
+            hid = self.dec[i](hid, condi)
+        Y = self.dec[-1](hid + enc1, condi)
+        Y = self.readout(Y)
+        #Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
         return Y
 
 
@@ -342,22 +370,26 @@ class MidMetaNet(nn.Module):
         # downsample
         enc_layers = [MetaBlock(
             channel_in, channel_hid, input_resolution, model_type,
-            mlp_ratio, drop, drop_path=dpr[0], layer_i=0)]
+            mlp_ratio, drop, drop_path=dpr[0], layer_i=0, filmed=False)]
         # middle layers
         for i in range(1, N2-1):
             enc_layers.append(MetaBlock(
                 channel_hid, channel_hid, input_resolution, model_type,
-                mlp_ratio, drop, drop_path=dpr[i], layer_i=i, filmed=True))
+                mlp_ratio, drop, drop_path=dpr[i], layer_i=i, filmed=False))
         # upsample
         enc_layers.append(MetaBlock(
             channel_hid, channel_in, input_resolution, model_type,
-            mlp_ratio, drop, drop_path=drop_path, layer_i=N2-1))
+            mlp_ratio, drop, drop_path=drop_path, layer_i=N2-1, filmed=False))
         self.enc = nn.Sequential(*enc_layers)
 
     def forward(self, x, condi):
         B, T, C, H, W = x.shape
         x = x.reshape(B, T*C, H, W)
-        z = x
+        try:
+            z = torch.cat((condi,x,condi),dim=1)
+        except:
+            #pdb.set_trace()
+            z = x
         for i in range(self.N2):
             z = self.enc[i](z, condi)
 

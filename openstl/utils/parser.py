@@ -46,7 +46,7 @@ def create_parser():
                         help='port only works when launcher=="slurm"')
 
     # dataset parameters
-    parser.add_argument('--batch_size', '-b', default=32, type=int, help='Training batch size')
+    parser.add_argument('--batch_size', '-b', default=4, type=int, help='Training batch size')
     parser.add_argument('--val_batch_size', '-vb', default=16, type=int, help='Validation batch size')
     parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--data_root', default='./data')
