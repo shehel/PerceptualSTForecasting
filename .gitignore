@@ -137,4 +137,14 @@ figs
 configs_test/
 api/test.py
 configs/kinetics/simvp
-configs/bair/simvp
+configs/bair/simvpnotebooks/viz.ipynb
+mnist_test_seq.npy
+train-images-idx3-ubyte.gz
+notebooks/simunet.gif
+notebooks/true.gif
+notebooks/trues.gif
+notebooks/unet.gif
+notebooks/viz.ipynb
+notebooks/viz.ipynb
+notebooks/plot.html
+example/tutorial.ipynb

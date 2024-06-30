@@ -16,26 +16,26 @@ def rescale(x):
 
 def MAE(pred, true, spatial_norm=False):
     if not spatial_norm:
-        return np.mean(np.abs(pred-true), axis=(0, 1)).sum()
+        return np.mean(np.abs(pred-true), axis=(0, 1)).mean()
     else:
         norm = pred.shape[-1] * pred.shape[-2] * pred.shape[-3]
-        return np.mean(np.abs(pred-true) / norm, axis=(0, 1)).sum()
+        return np.mean(np.abs(pred-true) / norm, axis=(0, 1)).mean()
 
 
 def MSE(pred, true, spatial_norm=False):
     if not spatial_norm:
-        return np.mean((pred-true)**2, axis=(0, 1)).sum()
+        return np.mean((pred-true)**2, axis=(0, 1)).mean()
     else:
         norm = pred.shape[-1] * pred.shape[-2] * pred.shape[-3]
-        return np.mean((pred-true)**2 / norm, axis=(0, 1)).sum()
+        return np.mean((pred-true)**2 / norm, axis=(0, 1)).mean()
 
 
 def RMSE(pred, true, spatial_norm=False):
     if not spatial_norm:
-        return np.sqrt(np.mean((pred-true)**2, axis=(0, 1)).sum())
+        return np.sqrt(np.mean((pred-true)**2, axis=(0, 1)).mean())
     else:
         norm = pred.shape[-1] * pred.shape[-2] * pred.shape[-3]
-        return np.sqrt(np.mean((pred-true)**2 / norm, axis=(0, 1)).sum())
+        return np.sqrt(np.mean((pred-true)**2 / norm, axis=(0, 1)).mean())
 
 
 def PSNR(pred, true, min_max_norm=True):
@@ -147,33 +147,33 @@ def metric(pred, true, mean=None, std=None, metrics=['mae', 'mse'],
 
     if 'mse' in metrics:
         if channel_names is None:
-            eval_res['mse'] = MSE(pred, true, spatial_norm)
+            eval_res['mse'] = MSE(pred[:,1], true, spatial_norm)
         else:
             mse_sum = 0.
             for i, c_name in enumerate(channel_names):
-                eval_res[f'mse_{str(c_name)}'] = MSE(pred[:, :, i*c_width: (i+1)*c_width, ...],
+                eval_res[f'mse_{str(c_name)}'] = MSE(pred[:, 1,:, i*c_width: (i+1)*c_width, ...],
                                                      true[:, :, i*c_width: (i+1)*c_width, ...], spatial_norm)
                 mse_sum += eval_res[f'mse_{str(c_name)}']
             eval_res['mse'] = mse_sum / c_group
 
     if 'mae' in metrics:
         if channel_names is None:
-            eval_res['mae'] = MAE(pred, true, spatial_norm)
+            eval_res['mae'] = MAE(pred[:,1], true, spatial_norm)
         else:
             mae_sum = 0.
             for i, c_name in enumerate(channel_names):
-                eval_res[f'mae_{str(c_name)}'] = MAE(pred[:, :, i*c_width: (i+1)*c_width, ...],
+                eval_res[f'mae_{str(c_name)}'] = MAE(pred[:, 1,:, i*c_width: (i+1)*c_width, ...],
                                                      true[:, :, i*c_width: (i+1)*c_width, ...], spatial_norm)
                 mae_sum += eval_res[f'mae_{str(c_name)}']
             eval_res['mae'] = mae_sum / c_group
 
     if 'rmse' in metrics:
         if channel_names is None:
-            eval_res['rmse'] = RMSE(pred, true, spatial_norm)
+            eval_res['rmse'] = RMSE(pred[:,1], true, spatial_norm)
         else:
             rmse_sum = 0.
             for i, c_name in enumerate(channel_names):
-                eval_res[f'rmse_{str(c_name)}'] = RMSE(pred[:, :, i*c_width: (i+1)*c_width, ...],
+                eval_res[f'rmse_{str(c_name)}'] = RMSE(pred[:, 1,:, i*c_width: (i+1)*c_width, ...],
                                                        true[:, :, i*c_width: (i+1)*c_width, ...], spatial_norm)
                 rmse_sum += eval_res[f'rmse_{str(c_name)}']
             eval_res['rmse'] = rmse_sum / c_group

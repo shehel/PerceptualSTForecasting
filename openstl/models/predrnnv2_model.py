@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
+import pdb
 
 from openstl.modules import SpatioTemporalLSTMCellv2
 
@@ -44,6 +45,7 @@ class PredRNNv2_Model(nn.Module):
     def forward(self, frames_tensor, mask_true, **kwargs):
         return_loss = kwargs.get('return_loss', True)
         # [batch, length, height, width, channel] -> [batch, length, channel, height, width]
+        pdb.set_trace()
         frames = frames_tensor.permute(0, 1, 4, 2, 3).contiguous()
         mask_true = mask_true.permute(0, 1, 4, 2, 3).contiguous()
 

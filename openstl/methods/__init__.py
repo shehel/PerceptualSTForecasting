@@ -11,8 +11,13 @@ from .predrnn import PredRNN
 from .predrnnpp import PredRNNpp
 from .predrnnv2 import PredRNNv2
 from .simvp import SimVP
+from .unet import UNet
 from .tau import TAU
 from .dmvfn import DMVFN
+from .simvprnn import SimVPRnn
+from .simvpresid import SimVPResid
+from .unetresid import UNetResid   
+from .simvpgan import SimVPGAN
 
 method_maps = {
     'convlstm': ConvLSTM,
@@ -26,12 +31,17 @@ method_maps = {
     'predrnnpp': PredRNNpp,
     'predrnnv2': PredRNNv2,
     'simvp': SimVP,
+    'unet': UNet,
     'tau': TAU,
-    'dmvfn': DMVFN
+    'dmvfn': DMVFN,
+    'simvprnn': SimVPRnn,
+    'simvpresid': SimVPResid,
+    'unetresid': UNetResid,
+    'simvpgan': SimVPGAN
 }
 
 __all__ = [
     'method_maps', 'ConvLSTM', 'CrevNet', 'E3DLSTM', 'MAU', 'MIM',
-    'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'PredNet', 'SimVP', 
-    'TAU'
+    'PredRNN', 'PredRNNpp', 'PredRNNv2', 'PhyDNet', 'PredNet', 'SimVP', 'UNet' 
+    'TAU', 'SimVPRnn', 'SimVPResid', 'UNetResid', 'SimVPGAN'
 ]

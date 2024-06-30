@@ -19,4 +19,4 @@ dependencies:
     - scikit-image<=0.19.3
     - timm<=0.6.11
     - tqdm
-prefix: /opt/anaconda3/envs/openstl
+prefix: /home/shehel/miniconda3/envs/simvp

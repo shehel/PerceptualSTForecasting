@@ -10,10 +10,10 @@ from .prednet_modules import PredNetConvLSTMCell
 from .predrnn_modules import SpatioTemporalLSTMCell
 from .predrnnpp_modules import CausalLSTMCell, GHU
 from .predrnnv2_modules import SpatioTemporalLSTMCellv2
-from .simvp_modules import (BasicConv2d, ConvSC, GroupConv2d,
+from .simvp_modules import (BasicConv2d, FilmGen, ConvSC, GroupConv2d, BasicConv3d, ConvSC3D,
                             ConvNeXtSubBlock, ConvMixerSubBlock, GASubBlock, gInception_ST,
                             HorNetSubBlock, MLPMixerSubBlock, MogaSubBlock, PoolFormerSubBlock,
-                            SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock, TAUSubBlock)
+                            SwinSubBlock, UniformerSubBlock, VANSubBlock, ViTSubBlock, UNetConvBlock, UNetUpBlock, TAUSubBlock)
 from .dmvfn_modules import Routing, MVFB, RoundSTE, warp
 
 
@@ -25,5 +25,5 @@ __all__ = [
     'ConvNeXtSubBlock', 'ConvMixerSubBlock', 'GASubBlock', 'gInception_ST',
     'HorNetSubBlock', 'MLPMixerSubBlock', 'MogaSubBlock', 'PoolFormerSubBlock',
     'SwinSubBlock', 'UniformerSubBlock', 'VANSubBlock', 'ViTSubBlock', 'TAUSubBlock',
-    'Routing', 'MVFB', 'RoundSTE', 'warp'
+    'Routing', 'MVFB', 'RoundSTE', 'warp' 'UNetConvBlock', 'UNetUpBlock', 'ConvSC3D', 'FilmGen'
 ]

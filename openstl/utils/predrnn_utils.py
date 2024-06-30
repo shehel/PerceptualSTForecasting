@@ -1,10 +1,11 @@
 import math
 import torch
 import numpy as np
+import pdb
 
 
 def reserve_schedule_sampling_exp(itr, batch_size, args):
-    T, img_channel, img_height, img_width = args.in_shape
+    T, img_channel, img_height, img_width = 24,32,32,32#args.in_shape
     if itr < args.r_sampling_step_1:
         r_eta = 0.5
     elif itr < args.r_sampling_step_2:
@@ -55,11 +56,12 @@ def reserve_schedule_sampling_exp(itr, batch_size, args):
                                   img_height // args.patch_size,
                                   img_width // args.patch_size,
                                   args.patch_size ** 2 * img_channel))
+    print (real_input_flag.shape)
     return torch.FloatTensor(real_input_flag).to(args.device)
 
 
 def schedule_sampling(eta, itr, batch_size, args):
-    T, img_channel, img_height, img_width = args.in_shape
+    T, img_channel, img_height, img_width = 24,32,32,32
     zeros = np.zeros((batch_size,
                       args.aft_seq_length - 1,
                       img_height // args.patch_size,
@@ -95,6 +97,8 @@ def schedule_sampling(eta, itr, batch_size, args):
                                   img_height // args.patch_size,
                                   img_width // args.patch_size,
                                   args.patch_size ** 2 * img_channel))
+    if real_input_flag.shape[-2] == 128:
+        pdb.set_trace()
     return eta, torch.FloatTensor(real_input_flag).to(args.device)
 
 

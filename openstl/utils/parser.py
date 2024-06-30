@@ -20,7 +20,7 @@ def create_parser():
                         help='Whether to use Native AMP for mixed precision training (PyTorch=>1.6.0)')
     parser.add_argument('--torchscript', action='store_true', default=False,
                         help='Whether to use torchscripted model')
-    parser.add_argument('--seed', default=42, type=int)
+    parser.add_argument('--seed', default=402, type=int)
     parser.add_argument('--diff_seed', action='store_true', default=False,
                         help='Whether to set different seeds for different ranks')
     parser.add_argument('--fps', action='store_true', default=False,
@@ -46,7 +46,7 @@ def create_parser():
                         help='port only works when launcher=="slurm"')
 
     # dataset parameters
-    parser.add_argument('--batch_size', '-b', default=16, type=int, help='Training batch size')
+    parser.add_argument('--batch_size', '-b', default=4, type=int, help='Training batch size')
     parser.add_argument('--val_batch_size', '-vb', default=16, type=int, help='Validation batch size')
     parser.add_argument('--num_workers', default=4, type=int)
     parser.add_argument('--data_root', default='./data')
@@ -79,7 +79,7 @@ def create_parser():
                         help='Whether to allow overwriting the provided config file with args')
 
     # Training parameters (optimizer)
-    parser.add_argument('--epoch', '-e', default=None, type=int, help='end epochs (default: 200)')
+    parser.add_argument('--epoch', '-e', default=75, type=int, help='end epochs')
     parser.add_argument('--log_step', default=1, type=int, help='Log interval by step')
     parser.add_argument('--opt', default='adam', type=str, metavar='OPTIMIZER',
                         help='Optimizer (default: "adam"')
@@ -94,7 +94,7 @@ def create_parser():
                         help='Clip gradient norm (default: None, no clipping)')
     parser.add_argument('--clip_mode', type=str, default='norm',
                         help='Gradient clipping mode. One of ("norm", "value", "agc")')
-    parser.add_argument('--early_stop_epoch', default=-1, type=int,
+    parser.add_argument('--early_stop_epoch', default=2, type=int,
                         help='Check to early stop after this epoch')
     parser.add_argument('--no_display_method_info', action='store_true', default=False,
                         help='Do not display method info')
@@ -111,7 +111,7 @@ def create_parser():
                         help='lower lr bound for cyclic schedulers that hit 0 (1e-5)')
     parser.add_argument('--final_div_factor', type=float, default=1e4,
                         help='min_lr = initial_lr/final_div_factor for onecycle scheduler')
-    parser.add_argument('--warmup_epoch', type=int, default=0, metavar='N',
+    parser.add_argument('--warmup_epoch', type=int, default=5, metavar='N',
                         help='epochs to warmup LR, if scheduler supports')
     parser.add_argument('--decay_epoch', type=float, default=100, metavar='N',
                         help='epoch interval to decay LR')
@@ -134,7 +134,7 @@ def default_parser():
         'use_gpu': True,
         'fp16': False,
         'torchscript': False,
-        'seed': 42,
+        'seed': 100,
         'diff_seed': False,
         'fps': False,
         'empty_cache': True,
@@ -177,7 +177,7 @@ def default_parser():
         'weight_decay': 0,
         'clip_grad': None,
         'clip_mode': 'norm',
-        'early_stop_epoch': -1,
+        'early_stop_epoch': 2,
         'no_display_method_info': False,
         # Training parameters (scheduler)
         'sched': 'onecycle',
