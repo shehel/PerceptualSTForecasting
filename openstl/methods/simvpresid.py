@@ -6,7 +6,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import SimVP_Model, UNet_Model
-from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
+from openstl.utils import reduce_tensor, IntervalScores
 from .base_method import Base_method
 from openstl.core.optim_scheduler import get_optim_scheduler
 
@@ -28,7 +28,7 @@ class SimVPResid(Base_method):
         self.model, self.d_model = self._build_model(self.config)
         self.model_optim, self.scheduler, self.by_epoch= self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
-        self.criterion = DifferentialDivergenceLoss()
+        self.criterion = IntervalScores()
         # set 1 to be a torch.tensor and move it to gpu
         self.real_label = torch.tensor(1.).to(self.device)
         self.fake_label = torch.tensor(0.).to(self.device)

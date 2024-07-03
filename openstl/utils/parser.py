@@ -79,7 +79,7 @@ def create_parser():
                         help='Whether to allow overwriting the provided config file with args')
 
     # Training parameters (optimizer)
-    parser.add_argument('--epoch', '-e', default=75, type=int, help='end epochs')
+    parser.add_argument('--epoch', '-e', default=100, type=int, help='end epochs')
     parser.add_argument('--log_step', default=1, type=int, help='Log interval by step')
     parser.add_argument('--opt', default='adam', type=str, metavar='OPTIMIZER',
                         help='Optimizer (default: "adam"')
@@ -94,7 +94,7 @@ def create_parser():
                         help='Clip gradient norm (default: None, no clipping)')
     parser.add_argument('--clip_mode', type=str, default='norm',
                         help='Gradient clipping mode. One of ("norm", "value", "agc")')
-    parser.add_argument('--early_stop_epoch', default=2, type=int,
+    parser.add_argument('--early_stop_epoch', default=10, type=int,
                         help='Check to early stop after this epoch')
     parser.add_argument('--no_display_method_info', action='store_true', default=False,
                         help='Do not display method info')

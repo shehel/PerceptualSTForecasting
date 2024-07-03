@@ -7,7 +7,7 @@ from openstl.modules import (ConvSC, ConvSC3D, ConvNeXtSubBlock, ConvMixerSubBlo
 
 import pdb
 from einops import rearrange, reduce
-class SimVP_Model(nn.Module):
+class SimVPQ_Model(nn.Module):
     r"""SimVP Model
 
     Implementation of `SimVP: Simpler yet Better Video Prediction
@@ -18,7 +18,7 @@ class SimVP_Model(nn.Module):
     def __init__(self, in_shape, hid_S=16, hid_T=384, N_S=4, N_T=4, model_type='gSTA',
                  mlp_ratio=8., drop=0.0, drop_path=0.0, spatio_kernel_enc=3,
                  spatio_kernel_dec=3, act_inplace=True, **kwargs):
-        super(SimVP_Model, self).__init__()
+        super(SimVPQ_Model, self).__init__()
         T, C, H, W = in_shape  # T is pre_seq_length
         H, W = int(H / 2**(N_S/2)), int(W / 2**(N_S/2))  # downsample 1 / 2**(N_S/2)
         act_inplace = False
@@ -90,15 +90,15 @@ class SimVP_Model(nn.Module):
         z = embed.view(B, T, C_, H_, W_)
 
         encoded = self.hid(z, quantiles)
-        #encoded_lo = self.hid_lo(z, quantiles)
-        #encoded_hi = self.hid_hi(z, quantiles)
+        encoded_lo = self.hid_lo(z, quantiles)
+        encoded_hi = self.hid_hi(z, quantiles)
         hid = encoded.reshape(B*T, C_, H_, W_)
-        #hid_lo = encoded_lo.reshape(B*T, C_, H_, W_)
-        #hid_hi = encoded_hi.reshape(B*T, C_, H_, W_)
-        Y = self.dec(hid, skip)
-        #Y_lo = self.dec(hid_lo, skip)
-        #Y_hi = self.dec(hid_hi, skip)
-        #Y = torch.stack([Y_lo, Y_m, Y_hi], dim=1)
+        hid_lo = encoded_lo.reshape(B*T, C_, H_, W_)
+        hid_hi = encoded_hi.reshape(B*T, C_, H_, W_)
+        Y_m = self.dec(hid, skip)
+        Y_lo = self.dec(hid_lo, skip)
+        Y_hi = self.dec(hid_hi, skip)
+        Y = torch.stack([Y_lo, Y_m, Y_hi], dim=1)
         # use einops and arrange it as B Q T C H W
         Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
         #Y = self.dec(hid, skip, [gamma1,beta1])
@@ -194,15 +194,15 @@ class Decoder(nn.Module):
                      act_inplace=act_inplace, filmed=False)
         )
         self.readout = nn.Conv2d(C_hid, C_out, 1)
-        self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
-        self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        # self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        # self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
 
     def forward(self, hid, enc1=None, condi=None):
         for i in range(0, len(self.dec)-1):
             hid = self.dec[i](hid, condi)
         Y = self.dec[-1](hid + enc1, condi)
-        #Y = self.readout(Y)
-        Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
+        Y = self.readout(Y)
+        #Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
         return Y
 
 

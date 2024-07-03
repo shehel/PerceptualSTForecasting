@@ -17,7 +17,7 @@ class UNetQ_Model(nn.Module):
     """
 
     def __init__(
-        self, in_channels=96, out_ts=12, out_ch=8, depth=3, wf=6, padding=True, batch_norm=True, up_mode="upconv",
+        self, in_channels=4, out_ts=4, out_ch=4, depth=2, wf=6, padding=True, batch_norm=True, up_mode="upconv",
         pos_emb=False, **kwargs
     ):
         super(UNetQ_Model, self).__init__()
@@ -38,8 +38,8 @@ class UNetQ_Model(nn.Module):
             self.down_path.append(UNetConvBlock(prev_channels, 2 ** (wf + i), padding, batch_norm, time_emb_dim=6 if pos_emb else None))
             prev_channels = 2 ** (wf + i)
 
-        self.hid = MidMetaNet(256, 256, 4,
-                 input_resolution=(32, 32), model_type="convsc")
+        # self.hid = MidMetaNet(256, 256, 4,
+        #          input_resolution=(32, 32), model_type="convsc")
 
         self.up_path = nn.ModuleList()
         for i in reversed(range(depth - 1)):
@@ -50,9 +50,12 @@ class UNetQ_Model(nn.Module):
         self.lower = nn.Conv2d(prev_channels, out_ts*out_ch, kernel_size=1)
         self.upper = nn.Conv2d(prev_channels, out_ts*out_ch, kernel_size=1)
 
-    def forward(self, x, *args, **kwargs):
-        B, _, _, H, W = x.shape
-        x = x.reshape(-1, self.in_channels, H,W)
+    def forward(self, inputs, *args, **kwargs):
+        x_raw = inputs[0]
+        quantiles = inputs[1]
+        quantiles = None
+        B, _, _, H, W = x_raw.shape
+        x = x_raw.reshape(-1, self.in_channels, H,W)
 
         t = self.pos_model(t) if exists(self.pos_model) else None
         blocks = []
@@ -65,7 +68,7 @@ class UNetQ_Model(nn.Module):
                 blocks.append(x)
                 x = torch.nn.functional.max_pool2d(x, 2)
         
-        x = self.hid(x)
+        #x = self.hid(x)
         # copy translated to x
         translated = x
         for i, up in enumerate(self.up_path):

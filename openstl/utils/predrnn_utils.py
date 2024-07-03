@@ -5,7 +5,7 @@ import pdb
 
 
 def reserve_schedule_sampling_exp(itr, batch_size, args):
-    T, img_channel, img_height, img_width = 24,32,32,32#args.in_shape
+    T, img_channel, img_height, img_width = args.in_shape
     if itr < args.r_sampling_step_1:
         r_eta = 0.5
     elif itr < args.r_sampling_step_2:
@@ -61,7 +61,7 @@ def reserve_schedule_sampling_exp(itr, batch_size, args):
 
 
 def schedule_sampling(eta, itr, batch_size, args):
-    T, img_channel, img_height, img_width = 24,32,32,32
+    T, img_channel, img_height, img_width = args.in_shape
     zeros = np.zeros((batch_size,
                       args.aft_seq_length - 1,
                       img_height // args.patch_size,

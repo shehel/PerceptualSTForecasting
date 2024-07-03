@@ -79,7 +79,7 @@ class BaseExperiment(object):
         self._dist = self.args.dist
         self._early_stop = self.args.early_stop_epoch
         
-        self.losses = ['val_train_loss', 'val_total_loss', 'val_mse_loss', 'reg_mse', "reg_std", 'std_loss', 'sum_loss']
+        self.losses = ['Val Total', 'MAE', 'MSE', 'Pinball', "Winkler", 'Coverage', 'MIL']
 
         self._preparation(dataloaders)
         if self._rank == 0:
@@ -359,7 +359,7 @@ class BaseExperiment(object):
             if self._dist and hasattr(self.train_loader.sampler, 'set_epoch'):
                 self.train_loader.sampler.set_epoch(epoch)
 
-            num_updates, loss_mean, loss_total, loss_mse, loss_reg, loss_div, loss_divs, loss_sum, eta = self.method.train_one_epoch(self, self.train_loader,
+            num_updates, loss_total, mae, mse, pinball_score, winkler_score, coverage, mil, eta = self.method.train_one_epoch(self, self.train_loader,
                                                                       epoch, num_updates, eta)
 
             self._epoch = epoch
@@ -372,21 +372,21 @@ class BaseExperiment(object):
                 if self._rank == 0:
 
                     print_log('Epoch: {0}, Steps: {1} | Lr: {2:.7f} | Train Loss: {3:.7f} | Vali Loss: {4:.7f}\n'.format(
-                        epoch + 1, len(self.train_loader), cur_lr, loss_mean.avg, vali_loss))
+                        epoch + 1, len(self.train_loader), cur_lr, loss_total.avg, vali_loss))
                     logger.report_scalar(title='Training Report', 
-                        series='Train Loss', value=loss_mean.avg, iteration=epoch)
+                        series='Train Loss', value=loss_total.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report', 
-                        series='Train MSE Loss', value=loss_mse.avg, iteration=epoch)
+                        series='Train MAE', value=mae.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report', 
-                        series='Train Reg MSE', value=loss_reg.avg, iteration=epoch)
+                        series='Train MSE', value=mse.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report', 
-                        series='Train Reg Std', value=loss_div.avg, iteration=epoch)
+                        series='Train Pinball', value=pinball_score.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report',
-                        series='Train Std', value=loss_divs.avg, iteration=epoch)
+                        series='Train Winkler', value=winkler_score.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report',
-                        series='Train total loss', value=loss_total.avg, iteration=epoch)
+                        series='Train Coverage', value=coverage.avg, iteration=epoch)
                     logger.report_scalar(title='Training Report',
-                        series='Train sum loss', value=loss_sum.avg, iteration=epoch) 
+                        series='Train MIL', value=mil.avg, iteration=epoch)
                     early_stop_decision =recorder(vali_loss, self.method.model, self.path, epoch, early_stop)
                     self._save(name='latest')
             if self._use_gpu and self.args.empty_cache:
@@ -415,8 +415,6 @@ class BaseExperiment(object):
         for loss, name in zip(results['loss'], self.losses):
             logger.report_scalar(title='Training Report',
                         series=name, value=loss.cpu().numpy(), iteration=epoch)
-        # subtract results['inputs'] by its temporal mean along first dimension using numpy
-        #results['inputs'] = results['inputs'] - np.mean(results['inputs'], axis=1, keepdims=True)
 
         plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,1,:,0,:,:,np.newaxis],
                     results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
@@ -537,7 +535,8 @@ class BaseExperiment(object):
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
 
-        print (results["loss"])
+        for loss in results["loss"]:
+            print(loss.item())
         # TODO Fix inp_mean calculation since adding by results will make it expand dims
 
         #inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)

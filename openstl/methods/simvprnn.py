@@ -6,7 +6,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import SimVPRnn_Model
-from openstl.utils import (reduce_tensor, DifferentialDivergenceLoss,
+from openstl.utils import (reduce_tensor, IntervalScores,
                            reserve_schedule_sampling_exp, schedule_sampling)
 from .base_method import Base_method
 

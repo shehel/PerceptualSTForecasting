@@ -6,7 +6,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import SimVP_Model
-from openstl.utils import reduce_tensor, DifferentialDivergenceLoss
+from openstl.utils import reduce_tensor, IntervalScores
 from .simvp import SimVP
 import pdb
 from softadapt import SoftAdapt, NormalizedSoftAdapt, LossWeightedSoftAdapt
@@ -26,7 +26,7 @@ class TAU(SimVP):
         self.model = self._build_model(self.config)
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
         self.criterion1 = nn.MSELoss()
-        self.criterion = DifferentialDivergenceLoss()
+        self.criterion = IntervalScores()
         self.adapt_weights = torch.tensor([1,0,0,0,0])
         self.component_1 = []
         self.component_2 = []

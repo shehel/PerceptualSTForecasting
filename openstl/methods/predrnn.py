@@ -5,7 +5,7 @@ from timm.utils import AverageMeter
 from tqdm import tqdm
 
 from openstl.models import PredRNN_Model
-from openstl.utils import (reduce_tensor, reshape_patch, reshape_patch_back,
+from openstl.utils import (reduce_tensor, reshape_patch, reshape_patch_back,IntervalScores,
                            reserve_schedule_sampling_exp, schedule_sampling)
 from .base_method import Base_method
 import pdb
@@ -23,7 +23,9 @@ class PredRNN(Base_method):
         Base_method.__init__(self, args, device, steps_per_epoch)
         self.model = self._build_model(self.args)
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
-        self.criterion = nn.MSELoss()
+        self.criterion = IntervalScores()
+        self.adapt_weights = torch.tensor([1.0,0,1,0])
+
 
     def _build_model(self, args):
         num_hidden = [int(x) for x in self.args.num_hidden.split(',')]
@@ -39,6 +41,7 @@ class PredRNN(Base_method):
             mask_input = self.args.pre_seq_length
         _, img_channel, img_height, img_width = self.args.in_shape
 
+        batch_x, _ = batch_x
         # preprocess
         test_ims = torch.cat([batch_x, batch_y], dim=1).permute(0, 1, 3, 4, 2).contiguous()
         test_dat = reshape_patch(test_ims, self.args.patch_size)
@@ -55,27 +58,38 @@ class PredRNN(Base_method):
             real_input_flag[:, :self.args.pre_seq_length - 1, :, :] = 1.0
 
         img_gen, _ = self.model(test_dat, real_input_flag, return_loss=False)
-        img_gen = reshape_patch_back(img_gen, self.args.patch_size)
-        pred_y = img_gen[:, -self.args.aft_seq_length:].permute(0, 1, 4, 2, 3).contiguous()
+        img_gen_list = []
+        for i in range(3):
+            img_gen_list.append(reshape_patch_back(img_gen[:, i], self.args.patch_size))
+        img_gen = torch.stack(img_gen_list, dim=1)
+        pred_y = img_gen[:, :, -self.args.aft_seq_length:].permute(0, 1,2, 5,3,4).contiguous()
 
         return pred_y, None
 
     def train_one_epoch(self, runner, train_loader, epoch, num_updates, eta=None, **kwargs):
         """Train the model with train_loader."""
+
         data_time_m = AverageMeter()
-        losses_m = AverageMeter()
+        total_loss_m = AverageMeter()
+        mae_m = AverageMeter()
+        mse_m = AverageMeter()
+        pinball_m = AverageMeter()
+        winkler_m = AverageMeter()
+        coverage_m = AverageMeter()
+        mil_m = AverageMeter()
+
         self.model.train()
         if self.by_epoch:
             self.scheduler.step(epoch)
         train_pbar = tqdm(train_loader) if self.rank == 0 else train_loader
 
         end = time.time()
-        for batch_x, batch_y, batch_static in train_pbar:
+        for batch_x, batch_y, batch_static, batch_quantiles in train_pbar:
             data_time_m.update(time.time() - end)
             self.model_optim.zero_grad()
 
             if not self.args.use_prefetcher:
-                batch_x, batch_y = batch_x.to(self.device), batch_y.to(self.device)
+                batch_x, batch_y, batch_static, batch_quantiles = batch_x.to(self.device), batch_y.to(self.device), batch_static.to(self.device), batch_quantiles.to(self.device)
             runner.call_hook('before_train_iter')
 
             # preprocess
@@ -90,9 +104,26 @@ class PredRNN(Base_method):
 
             with self.amp_autocast():
                 img_gen, loss = self.model(ims, real_input_flag)
-            pdb.set_trace()
+                img_gen_list = []
+                for i in range(3):
+                    img_gen_list.append(reshape_patch_back(img_gen[:, i], self.args.patch_size))
+                img_gen = torch.stack(img_gen_list, dim=1)
+                pred_y = img_gen[:, :, -self.args.aft_seq_length:].permute(0, 1,2, 5,3,4).contiguous()
+
+                mae,mse,pinball_score,winkler_score, coverage, mil = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:,0,0,0])
+
+                loss = self.adapt_weights[0] * mae + self.adapt_weights[1] * mse + self.adapt_weights[2] * pinball_score + self.adapt_weights[3] * winkler_score
+
             if not self.dist:
-                losses_m.update(loss.item(), batch_x.size(0))
+
+                total_loss_m.update(loss.item(), batch_x.size(0))
+                mae_m.update(mae.item(), batch_x.size(0))
+                mse_m.update(mse.item(), batch_x.size(0))
+                pinball_m.update(pinball_score.item(), batch_x.size(0))
+                winkler_m.update(winkler_score.item(), batch_x.size(0))
+                coverage_m.update(coverage.item(), batch_x.size(0))
+                mil_m.update(mil.item(), batch_x.size(0))
+
 
             if self.loss_scaler is not None:
                 if torch.any(torch.isnan(loss)) or torch.any(torch.isinf(loss)):
@@ -110,7 +141,7 @@ class PredRNN(Base_method):
             num_updates += 1
 
             if self.dist:
-                losses_m.update(reduce_tensor(loss), batch_x.size(0))
+                total_loss_m.update(reduce_tensor(loss), batch_x.size(0))
 
             if not self.by_epoch:
                 self.scheduler.step()
@@ -127,4 +158,4 @@ class PredRNN(Base_method):
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
 
-        return num_updates, losses_m, eta
+        return num_updates, total_loss_m, mae_m, mse_m, pinball_m, winkler_m, coverage_m, mil_m, eta

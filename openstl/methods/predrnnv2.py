@@ -6,7 +6,7 @@ from tqdm import tqdm
 
 from openstl.models import PredRNNv2_Model
 from openstl.utils import (reduce_tensor, reshape_patch, reshape_patch_back,
-                           reserve_schedule_sampling_exp, schedule_sampling, DifferentialDivergenceLoss)
+                           reserve_schedule_sampling_exp, schedule_sampling, IntervalScores)
 from .predrnn import PredRNN
 import pdb
 

@@ -6,7 +6,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import SimVP_Model, SimVPGAN_Model
-from openstl.utils import reduce_tensor, DifferentialDivergenceLoss, DilateLoss
+from openstl.utils import reduce_tensor, IntervalScores
 from .base_method import Base_method
 from openstl.core.optim_scheduler import get_optim_scheduler
 
@@ -28,12 +28,11 @@ class SimVPGAN(Base_method):
         self.model, self.d_model = self._build_model(self.config)
         self.model_optim, self.scheduler, self.by_epoch, self.dmodel_optim, self.d_scheduler, self.d_epoch = self._init_optimizer(steps_per_epoch)
         #self.criterion = nn.MSELoss()
-        self.criterion = DifferentialDivergenceLoss()
+        self.criterion = IntervalScores()
         self.BCE_loss = nn.BCEWithLogitsLoss()
         # set 1 to be a torch.tensor and move it to gpu
         self.real_label = torch.tensor(1.).to(self.device)
         self.fake_label = torch.tensor(0.).to(self.device)
-        self.val_criterion = DilateLoss()
         self.adapt_object = LossWeightedSoftAdapt(beta=-0.2)
         self.iters_to_make_updates = 70
         self.adapt_weights = torch.tensor([100,0,0,100,0])
