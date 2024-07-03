@@ -79,11 +79,11 @@ def train_collate_fn(batch):
     # sample between 0 and 5
     # do below only once out of 5 times
     #if random.randint(0, 5) == 0:
-    rng = random.randint(0, 5)
+    #rng = random.randint(0, 5)
     # use torch equivalent of np.where((static_batch > ranges[rng]) & (static_batch < ranges[rng+1]), 1, 0)
-    static_batch = torch.where((static_batch > ranges[rng]) & (static_batch < ranges_l[rng]), 1, 0)
+    #static_batch = torch.where((static_batch > ranges[rng]) & (static_batch < ranges_l[rng]), 1, 0)
     #else:
-    #    static_batch = torch.ones_like(static_batch)
+    static_batch = torch.ones_like(static_batch)
     quantiles_batch = torch.from_numpy(quantiles_batch).float()
 
     return dynamic_input_batch, target_batch, static_batch, quantiles_batch
