@@ -299,7 +299,7 @@ class BaseExperiment(object):
         """Plot the basic infomation of supported methods"""
         T, C, H, W = self.args.in_shape
         if self.args.method in ['simvp', 'unet', 'tau', 'simvpresid', 'unetresid', 'simvpgan']:
-            input_dummy = [torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device), torch.ones(1, 1,16,16).to(self.device)]
+            input_dummy = [torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device), torch.ones(1, 1).to(self.device)]
         elif self.args.method == 'simvprnn':
             Hp, Wp = 32, 32
             Cp = 32
@@ -347,7 +347,7 @@ class BaseExperiment(object):
 
     def train(self):
         """Training loops of STL methods"""
-        recorder = Recorder(verbose=True, early_stop_time=min(self._max_epochs // 10, 7))
+        recorder = Recorder(verbose=True, early_stop_time=min(self._max_epochs // 10, 10))
         num_updates = self._epoch * self.steps_per_epoch
         early_stop = True
         self.call_hook('before_train_epoch')

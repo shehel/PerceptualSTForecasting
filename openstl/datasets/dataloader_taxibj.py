@@ -47,18 +47,17 @@ class TaxibjDataset(Dataset):
             high_quantile = 0.95
 
         else:
-            #low_quantile = random.choice([0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45])
+            low_quantile = random.choice([0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45])
 
             #high_quantile = random.choice([0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95])
-            #high_quantile = 1 - low_quantile
-            low_quantile = 0.05
-            high_quantile = 0.95
+            high_quantile = 1 - low_quantile
+            #low_quantile = 0.05
+            #high_quantile = 0.95
 
-        low_quantile = np.repeat(low_quantile, 16*16).reshape(1,16,16)
-        high_quantile = np.repeat(high_quantile, 16*16).reshape(1,16,16)
-        m_quantile = np.repeat(0.5, 16*16).reshape(1,16,16)
-        #quantile = random.choice([0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45, 0.5, 0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95])
-        # make it into a vector
+        #low_quantile = np.repeat(low_quantile, 4*32*32).reshape(4,1,32,32)
+        #high_quantile = np.repeat(high_quantile, 4*32*32).reshape(4,1,32,32)
+        m_quantile = 0.5
+        #m_quantile = np.repeat(m_quantile, 4*32*32).reshape(4,1,32,32)
 
         quantiles = np.array([low_quantile, m_quantile, high_quantile])
         # create a array of ones of shape 1,1,32,32
@@ -79,11 +78,11 @@ def train_collate_fn(batch):
     # sample between 0 and 5
     # do below only once out of 5 times
     #if random.randint(0, 5) == 0:
-    #rng = random.randint(0, 5)
+    rng = random.randint(0, 5)
     # use torch equivalent of np.where((static_batch > ranges[rng]) & (static_batch < ranges[rng+1]), 1, 0)
-    #static_batch = torch.where((static_batch > ranges[rng]) & (static_batch < ranges_l[rng]), 1, 0)
+    static_batch = torch.where((static_batch > ranges[rng]) & (static_batch < ranges_l[rng]), 1, 0)
     #else:
-    static_batch = torch.ones_like(static_batch)
+    #static_batch = torch.ones_like(static_batch)
     quantiles_batch = torch.from_numpy(quantiles_batch).float()
 
     return dynamic_input_batch, target_batch, static_batch, quantiles_batch

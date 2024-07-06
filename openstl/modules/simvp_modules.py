@@ -333,13 +333,21 @@ class GASubBlock(nn.Module):
     """A GABlock (gSTA) for SimVP"""
 
     def __init__(self, dim, kernel_size=21, mlp_ratio=4.,
-                 drop=0., drop_path=0.1, init_value=1e-2, act_layer=nn.GELU):
+                 drop=0., drop_path=0.1, init_value=1e-2, act_layer=nn.GELU, filmed=False):
         super().__init__()
-        self.norm1 = nn.BatchNorm2d(dim)
+        self.filmed = filmed
+        if filmed:
+            self.norm1 = FiLM()
+        else:
+            self.norm1 = nn.BatchNorm2d(dim)
         self.attn = SpatialAttention(dim, kernel_size)
         self.drop_path = DropPath(drop_path) if drop_path > 0. else nn.Identity()
 
-        self.norm2 = nn.BatchNorm2d(dim)
+
+        if filmed:
+            self.norm2 = FiLM()
+        else:
+            self.norm2 = nn.BatchNorm2d(dim)
         mlp_hidden_dim = int(dim * mlp_ratio)
         self.mlp = MixMlp(
             in_features=dim, hidden_features=mlp_hidden_dim, act_layer=act_layer, drop=drop)
@@ -368,11 +376,17 @@ class GASubBlock(nn.Module):
     def no_weight_decay(self):
         return {'layer_scale_1', 'layer_scale_2'}
 
-    def forward(self, x):
-        x = x + self.drop_path(
-            self.layer_scale_1.unsqueeze(-1).unsqueeze(-1) * self.attn(self.norm1(x)))
-        x = x + self.drop_path(
-            self.layer_scale_2.unsqueeze(-1).unsqueeze(-1) * self.mlp(self.norm2(x)))
+    def forward(self, x, condi=None):
+        if self.filmed:
+            x = x + self.drop_path(
+                self.layer_scale_1.unsqueeze(-1).unsqueeze(-1) * self.attn(self.norm1(x, condi[0], condi[1])))
+            x = x + self.drop_path(
+                self.layer_scale_2.unsqueeze(-1).unsqueeze(-1) * self.mlp(self.norm2(x, condi[0], condi[1])))
+        else:
+            x = x + self.drop_path(
+                self.layer_scale_1.unsqueeze(-1).unsqueeze(-1) * self.attn(self.norm1(x)))
+            x = x + self.drop_path(
+                self.layer_scale_2.unsqueeze(-1).unsqueeze(-1) * self.mlp(self.norm2(x)))
         return x
 
 

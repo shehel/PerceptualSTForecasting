@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from tqdm import tqdm
 from timm.utils import AverageMeter
 
-from openstl.models import SimVP_Model, SimVPQ_Model
+from openstl.models import SimVP_Model, SimVPQ_Model, SimVPQCond_Model, SimVPQFiLM_Model, SimVPQFiLMC_Model
 from openstl.utils import reduce_tensor, IntervalScores
 from .base_method import Base_method
 
@@ -28,7 +28,7 @@ class SimVP(Base_method):
 
     def _build_model(self, args):
 
-        model = SimVPQ_Model(**args)
+        model = SimVPQFiLMC_Model(**args)
         model = model.to(self.device)
         return model
 
@@ -84,21 +84,22 @@ class SimVP(Base_method):
             runner.call_hook('before_train_iter')
 
             with self.amp_autocast():
-                # pred_y_m, _ = self._predict([batch_x, batch_quantiles[:,1]])
-                pred_y, _ = self._predict([batch_x, batch_quantiles[:,1]])
-                # pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0]])
-                # pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2]])
+                #pred_y, _ = self._predict([batch_x, batch_quantiles[:,1:2]])
+                #pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0:1]])
+                interval = (batch_quantiles[:,2:3]-batch_quantiles[:,0:1])
+                pred_y, _ = self._predict([batch_x, interval])
+                #pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2:3]])
                 # # create a new dimension at axis 1
                 # pred_y_lo = pred_y_lo.unsqueeze(1)
                 # pred_y_m = pred_y_m.unsqueeze(1)
                 # pred_y_hi = pred_y_hi.unsqueeze(1)
 
                 # # combine the 3 predictions at a new dimension at axis 1
-                # pred_y = torch.cat((pred_y_lo, pred_y_m, pred_y_hi), dim=1)
+                #pred_y = torch.cat((pred_y_lo, pred_y_m, pred_y_hi), dim=1)
 
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
-                mae,mse,pinball_score,winkler_score, coverage, mil = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:,0,0,0])
+                mae,mse,pinball_score,winkler_score, coverage, mil = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:])#,0,0,0,0])
                 loss = self.adapt_weights[0] * mae + self.adapt_weights[1] * mse + self.adapt_weights[2] * pinball_score + self.adapt_weights[3] * winkler_score
 
             if epoch >= 0:

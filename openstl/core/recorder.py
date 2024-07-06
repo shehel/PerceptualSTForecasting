@@ -9,7 +9,7 @@ class Recorder:
         self.val_loss_min = np.Inf
         self.delta = delta
         self.decrease_time = 0
-        self.early_stop_time = 3
+        self.early_stop_time = early_stop_time
         self.warmup = warmup
 
     def __call__(self, val_loss, model, path, epoch, early_stop=True):

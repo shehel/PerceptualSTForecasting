@@ -165,20 +165,19 @@ class Base_method(object):
         for i, (batch_x, batch_y, batch_masks, batch_quantiles) in enumerate(data_loader):
             with torch.no_grad():
                 batch_x, batch_y, batch_quantiles = batch_x.to(self.device), batch_y.to(self.device), batch_quantiles.to(self.device)
-                pred_y, _ = self._predict([batch_x, batch_quantiles], batch_y)
-            #     pred_y_m, _ = self._predict([batch_x, batch_quantiles[:,1]])
-            #     pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0]])
-            #     pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2]])
+                interval = (batch_quantiles[:,2:3]-batch_quantiles[:,0:1])
+                pred_y, _ = self._predict([batch_x, interval])
+                #pred_y, _ = self._predict([batch_x, batch_quantiles], batch_y)
+                #pred_y_m, _ = self._predict([batch_x, batch_quantiles[:,1:2]])
+                #pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0:1]])
+                #pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2:3]])
             # # create a new dimension at axis 1
-            #     pred_y_lo = pred_y_lo.unsqueeze(1)
-            #     pred_y_m = pred_y_m.unsqueeze(1)
-            #     pred_y_hi = pred_y_hi.unsqueeze(1)
+                #pred_y_lo = pred_y_lo.unsqueeze(1)
+                #pred_y_m = pred_y_m.unsqueeze(1)
+                #pred_y_hi = pred_y_hi.unsqueeze(1)
 
             # # combine the 3 predictions at a new dimension at axis 1
-            #     pred_y = torch.cat((pred_y_lo, pred_y_m, pred_y_hi), dim=1)
-                #assert pred_y.shape == batch_y.shape
-                #assert trend.shape == batch_y.shape
-                #pred_y = pred_y + trend
+                #pred_y = torch.cat((pred_y_lo, pred_y_m, pred_y_hi), dim=1)
 
 
 
