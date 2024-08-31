@@ -28,19 +28,54 @@ from pytorch_msssim import ssim, ms_ssim, SSIM, MS_SSIM
 import pdb
 
 
-class QuantileRegressionLoss(nn.Module):
+class TwoQuantileRegressionLoss(nn.Module):
     def __init__(self, params):
-        super(QuantileRegressionLoss, self).__init__()
+        super(TwoQuantileRegressionLoss, self).__init__()
 
         self.q_lo_loss = PinballLoss()
         self.q_hi_loss = PinballLoss()
+        self.q_m_loss = PinballLoss()
         self.q_lo_weight = params['q_lo_weight']
         self.q_hi_weight = params['q_hi_weight']
+        self.m_weight = params['m_weight']
 
     def forward(self, pred, target, mask, quantile):
         lo_loss = self.q_lo_weight * self.q_lo_loss(pred[:,0,:,:,:].squeeze(), target.squeeze(), quantile[:,0:1], mask)
         hi_loss = self.q_hi_weight * self.q_hi_loss(pred[:,2,:,:,:].squeeze(), target.squeeze(), quantile[:,2:3], mask)
-        loss = lo_loss + hi_loss
+        m_loss = self.m_weight * self.q_m_loss(pred[:,1,:,:,:].squeeze(), target.squeeze(), quantile[:,1:2], mask)
+        loss = lo_loss + hi_loss + m_loss
+        return loss
+class FourQuantileRegressionLoss(nn.Module):
+    def __init__(self, params):
+        super(FourQuantileRegressionLoss, self).__init__()
+
+        self.q_lo_loss = PinballLoss()
+        self.q_hi_loss = PinballLoss()
+        self.q_m_loss = PinballLoss()
+        self.q_lo2_loss = PinballLoss()
+        self.q_hi2_loss = PinballLoss()
+        self.q_hi3_loss = PinballLoss()
+        self.q_lo3_loss = PinballLoss()
+        self.q_lo_weight = params['q_lo_weight']
+        self.q_hi_weight = params['q_hi_weight']
+        self.m_weight = params['m_weight']
+        self.q_lo2_weight = params['lo2_weight']
+        self.q_hi2_weight = params['hi2_weight']
+        # self.q_lo3_weight = params['lo3_weight']
+        # self.q_hi3_weight = params['hi3_weight']
+        self.q_lo3_weight = 1
+        self.q_hi3_weight = 1
+
+    def forward(self, pred, target, mask, quantile):
+        lo1_loss = self.q_lo_weight * self.q_lo_loss(pred[:,0,:,:,:].squeeze(), target.squeeze(), quantile[:,0:1], mask)
+        lo2_loss = self.q_lo2_weight * self.q_lo2_loss(pred[:,1,:,:,:].squeeze(), target.squeeze(), quantile[:,1:2], mask)
+        lo3_loss = self.q_lo3_weight * self.q_lo3_loss(pred[:,2,:,:,:].squeeze(), target.squeeze(), quantile[:,2:3], mask)
+        m_loss = self.m_weight * self.q_m_loss(pred[:,3,:,:,:].squeeze(), target.squeeze(), quantile[:,3:4], mask)
+        hi1_loss = self.q_hi_weight * self.q_hi_loss(pred[:,4,:,:,:].squeeze(), target.squeeze(), quantile[:,4:5], mask)
+        hi2_loss = self.q_hi2_weight * self.q_hi2_loss(pred[:,5,:,:,:].squeeze(), target.squeeze(), quantile[:,5:6], mask)
+        hi3_loss = self.q_hi3_weight * self.q_hi3_loss(pred[:,6,:,:,:].squeeze(), target.squeeze(), quantile[:,6:7], mask)
+
+        loss = lo1_loss + hi1_loss + m_loss + lo2_loss + hi2_loss + lo3_loss + hi3_loss
         return loss
 
 class PinballLoss():
@@ -100,7 +135,7 @@ class PinballLossFixed():
       return loss
 
 def mis_loss_func(
-    y_pred: torch.tensor, y_true: torch.tensor, interval: float
+    y_pred: torch.tensor, y_true: torch.tensor, alpha: float
 ) -> torch.tensor:
     """Calculate MIS loss
 
@@ -112,10 +147,10 @@ def mis_loss_func(
     Returns:
         torch.tensor: output losses
     """
-    alpha = (interval[:,0]) + (1- interval[:,2])
+    alpha = torch.tensor(alpha)
     alpha = alpha.view(-1, 1, 1, 1, 1)  # Reshape alpha to match the batch dimension and broadcast
     lower = y_pred[:, 0]
-    upper = y_pred[:, 2]
+    upper = y_pred[:, 1]
     loss = upper - lower
     loss = torch.max(loss, loss + (2 / alpha) * (lower - y_true))
     loss = torch.max(loss, loss + (2 / alpha) * (y_true - upper))
@@ -124,7 +159,7 @@ def mis_loss_func(
     return loss
 
 # As per definition in Dewolf paper
-def eval_quantiles(lower, upper, trues, preds, mask):
+def eval_quantiles(lower, upper, trues,mask):
     N = mask.sum()*4
 
     icp = torch.sum((trues > lower) & (trues < upper)).float() / N
@@ -133,25 +168,24 @@ def eval_quantiles(lower, upper, trues, preds, mask):
 
     return icp, mil
 class IntervalScores(nn.Module):
-    def __init__(self, w1=1, w2 =1, w3=1, w4=1):
+    def __init__(self):
         super(IntervalScores, self).__init__()
-        self.w1, self.w2, self.w3, self.w4 = w1, w2, w3, w4
 
-        self.mae = nn.L1Loss(reduction='none')
-        self.mse = nn.MSELoss(reduction='none')
-        self.q_loss = QuantileRegressionLoss(params={"q_lo_weight": 1, "q_hi_weight": 1})
 
+        self.q_loss = TwoQuantileRegressionLoss(params={"q_lo_weight": 1, "q_hi_weight": 1, "m_weight": 1})
+        #self.q_loss = FourQuantileRegressionLoss(params={"q_lo_weight": 1, "q_hi_weight": 1, "m_weight": 1, "lo2_weight": 1, "hi2_weight": 1})
 
     def forward(self, pred, true, mask, quantiles, train_run=True):
         pred = pred * torch.unsqueeze(mask, 1)
-        mae = torch.mean(self.mae(pred[:,1,:,:,:].squeeze(), true.squeeze())*mask)
-        mse = torch.mean(self.mse(pred[:,1,:,:,:].squeeze(), true.squeeze())*mask)
+        # mae = torch.mean(self.mae(pred[:,1,:,:,:].squeeze(), true.squeeze())*mask)
+        # mse = torch.mean(self.mse(pred[:,1,:,:,:].squeeze(), true.squeeze())*mask)
         pinball_score = self.q_loss(pred, true, mask[:,], quantiles)
-        winkler_score = mis_loss_func(pred, true, quantiles)
-        coverage, mil = eval_quantiles(pred[:,0], pred[:,2], true, pred[:,1], mask)
+        # winkler_score = mis_loss_func(pred, true, quantiles)
+        # coverage, mil = eval_quantiles(pred[:,0], pred[:,2], true, pred[:,1], mask)
 
-        # check if train loss is nan
-        return [self.w1*mae,  self.w2*mse, self.w3*pinball_score, self.w4*winkler_score, coverage, mil]
+        # # check if train loss is nan
+        # return [self.w1*mae,  self.w2*mse, self.w3*pinball_score, self.w4*winkler_score, coverage, mil]
+        return pinball_score
 
 def set_seed(seed, deterministic=False):
     """Set random seed.

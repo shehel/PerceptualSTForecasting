@@ -18,11 +18,12 @@ from .unetq_model import UNetQ_Model
 from .simvpgan_model import SimVPGAN_Model
 from .simvpq_model import SimVPQ_Model
 from .simvpqcond_model import SimVPQCond_Model
+from .simvpqcondc_model import SimVPQCondC_Model
 from .simvpqfilm_model import SimVPQFiLM_Model
 from .simvpqfilmc_model import SimVPQFiLMC_Model
 __all__ = [
     'ConvLSTM_Model', 'CrevNet_Model', 'E3DLSTM_Model', 'MAU_Model', 'MIM_Model',
     'PhyDNet_Model', 'PredNet_Model', 'PredRNN_Model', 'PredRNNpp_Model', 'PredRNNv2_Model', 'SimVP_Model',
-    'DMVFN_Model', 'UNet_Model', 'SimVPRnn_Model', 'UNetQ_Model', 'SimVPGAN_Model', 'SimVPQ_Model', 'SimVPQCond_Model',
+    'DMVFN_Model', 'UNet_Model', 'SimVPRnn_Model', 'UNetQ_Model', 'SimVPGAN_Model', 'SimVPQ_Model', 'SimVPQCond_Model', 'SimVPQCondC_Model'
     'SimVPQFiLM_Model', 'SimVPQFiLMC_Model'
 ]

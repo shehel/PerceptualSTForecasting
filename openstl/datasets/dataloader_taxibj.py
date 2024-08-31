@@ -42,24 +42,38 @@ class TaxibjDataset(Dataset):
             data = seqs[:len_data, ...]
             labels = seqs[len_data:, ...]
 
-        if self.test:
-            low_quantile = 0.05
-            high_quantile = 0.95
+        # if self.test:
+        #     low_quantile = 0.05
+        #     high_quantile = 0.95
 
-        else:
-            low_quantile = random.choice([0.05, 0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40, 0.45])
+        # else:
+        #     low_quantile = random.choice([0.05, 0.20, 0.35])
 
             #high_quantile = random.choice([0.55, 0.60, 0.65, 0.70, 0.75, 0.80, 0.85, 0.90, 0.95])
-            high_quantile = 1 - low_quantile
+#            high_quantile = 1 - low_quantile
             #low_quantile = 0.05
             #high_quantile = 0.95
-
-        #low_quantile = np.repeat(low_quantile, 4*32*32).reshape(4,1,32,32)
-        #high_quantile = np.repeat(high_quantile, 4*32*32).reshape(4,1,32,32)
         m_quantile = 0.5
-        #m_quantile = np.repeat(m_quantile, 4*32*32).reshape(4,1,32,32)
+        m_quantile = np.repeat(m_quantile, 4*32*32).reshape(4,1,32,32)
 
-        quantiles = np.array([low_quantile, m_quantile, high_quantile])
+        if self.test:
+            low1_quantile = np.repeat(0.05, 4*32*32).reshape(4,1,32,32)
+            high3_quantile = np.repeat(0.95, 4*32*32).reshape(4,1,32,32)
+            low2_quantile = np.repeat(0.2, 4*32*32).reshape(4,1,32,32)
+            high2_quantile = np.repeat(0.8, 4*32*32).reshape(4,1,32,32)
+            low3_quantile = np.repeat(0.35, 4*32*32).reshape(4,1,32,32)
+            high1_quantile = np.repeat(0.65, 4*32*32).reshape(4,1,32,32)
+            quantiles = np.array([low1_quantile,low2_quantile,low3_quantile,m_quantile,high1_quantile,high2_quantile,high3_quantile])
+        else:
+            low_quantile = random.choice([0.05,0.1,0.15, 0.2, 0.25, 0.3, 0.35,0.4,0.45])
+            high_quantile = 1 - low_quantile
+            low1_quantile = np.repeat(low_quantile, 4*32*32).reshape(4,1,32,32)
+            high1_quantile = np.repeat(high_quantile, 4*32*32).reshape(4,1,32,32)
+            quantiles = np.array([low1_quantile,m_quantile,high1_quantile])
+
+
+        #quantiles = np.array([low_quantile, m_quantile, high_quantile])
+        #quantiles = np.array([0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95])
         # create a array of ones of shape 1,1,32,32
         #static_ch = np.ones((1, 1, 32, 32))
         return data, labels, self.static_ch[0], quantiles
@@ -120,7 +134,7 @@ def load_data(batch_size, val_batch_size, data_root, num_workers=4,
                                      shuffle=True, is_training=True,
                                      pin_memory=True, drop_last=True,
                                      num_workers=num_workers,
-                                     distributed=distributed, use_prefetcher=use_prefetcher, collate_fn=train_collate_fn)
+                                     distributed=distributed, use_prefetcher=use_prefetcher, collate_fn=test_collate_fn)
     dataloader_vali = create_loader(test_set,
                                     batch_size=val_batch_size,
                                     shuffle=False, is_training=False,

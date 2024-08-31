@@ -95,12 +95,22 @@ class SimVPQ_Model(nn.Module):
         hid = encoded.reshape(B*T, C_, H_, W_)
         hid_lo = encoded_lo.reshape(B*T, C_, H_, W_)
         hid_hi = encoded_hi.reshape(B*T, C_, H_, W_)
-        Y_m = self.dec(hid, skip)
         Y_lo = self.dec(hid_lo, skip)
+        Y_m = self.dec(hid, skip)
         Y_hi = self.dec(hid_hi, skip)
-        Y = torch.stack([Y_lo, Y_m, Y_hi], dim=1)
+        # I have Y_lo and Y_hi of shape (B T) 3 2 32 32
+        # The 3 in each corresponds to quantiles corresponding 60% and 90% intervals along with .5 quantiles
+        # Transform so that that it becomes B T Q C H W with Q being 5 because there's duplicate of .5 quantile
+
+        # Concatenate Y_lo and Y_hi along the quantile dimension
+
+        #Y = torch.cat((Y_lo, Y_hi), dim=1)
+        # rearrange Y so that Y[1] is [Y[0],Y[3],Y[1],Y[2],Y[5]]
+        Y = torch.cat((Y_hi[:, 0:1], Y_m[:,0:1], Y_lo[:, 0:1],
+                        Y_lo[:, 1:2], Y_lo[:, 2:3], Y_m[:,2:3], Y_hi[:, 2:3]), dim=1)
+
         # use einops and arrange it as B Q T C H W
-        Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
+        Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=7, H=H, W=W, C=C)
         #Y = self.dec(hid, skip, [gamma1,beta1])
         #Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
 
@@ -194,15 +204,15 @@ class Decoder(nn.Module):
                      act_inplace=act_inplace, filmed=False)
         )
         self.readout = nn.Conv2d(C_hid, C_out, 1)
-        # self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
-        # self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
 
     def forward(self, hid, enc1=None, condi=None):
         for i in range(0, len(self.dec)-1):
             hid = self.dec[i](hid, condi)
         Y = self.dec[-1](hid + enc1, condi)
-        Y = self.readout(Y)
-        #Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
+        #Y = self.readout(Y)
+        Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
         return Y
 
 

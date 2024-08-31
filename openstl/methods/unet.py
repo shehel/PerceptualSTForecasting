@@ -28,7 +28,6 @@ class UNet(Base_method):
         self.model_optim, self.scheduler, self.by_epoch= self._init_optimizer(steps_per_epoch)
         self.criterion = IntervalScores()
         # set 1 to be a torch.tensor and move it to gpu
-        self.adapt_weights = torch.tensor([1.0,0,1,0])
 
 
     def _init_optimizer(self, steps_per_epoch):
@@ -68,13 +67,7 @@ class UNet(Base_method):
         """Train the model with train_loader."""
         data_time_m = AverageMeter()
 
-        total_loss_m = AverageMeter()
-        mae_m = AverageMeter()
-        mse_m = AverageMeter()
         pinball_m = AverageMeter()
-        winkler_m = AverageMeter()
-        coverage_m = AverageMeter()
-        mil_m = AverageMeter()
 
         self.model.train()
         if self.by_epoch:
@@ -99,9 +92,8 @@ class UNet(Base_method):
                 # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
 
 
-                mae,mse,pinball_score,winkler_score, coverage, mil = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:,0,0,0])
+                loss = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:])
 
-                loss = self.adapt_weights[0] * mae + self.adapt_weights[1] * mse + self.adapt_weights[2] * pinball_score + self.adapt_weights[3] * winkler_score
 
             if epoch >= 0:
                 if self.loss_scaler is not None:
@@ -121,16 +113,10 @@ class UNet(Base_method):
 
             #loss, total_loss, mse_loss,mse_div,std_div,reg_loss = self.criterion(pred_y[:,:,2:3,:,:], batch_y[:,:,4:5,:,:])
             if not self.dist:
-                total_loss_m.update(loss.item(), batch_x.size(0))
-                mae_m.update(mae.item(), batch_x.size(0))
-                mse_m.update(mse.item(), batch_x.size(0))
-                pinball_m.update(pinball_score.item(), batch_x.size(0))
-                winkler_m.update(winkler_score.item(), batch_x.size(0))
-                coverage_m.update(coverage.item(), batch_x.size(0))
-                mil_m.update(mil.item(), batch_x.size(0))
+                pinball_m.update(loss.item(), batch_x.size(0))
 
             if self.dist:
-                total_loss_m.update(reduce_tensor(loss), batch_x.size(0))
+                pinball_m.update(reduce_tensor(loss), batch_x.size(0))
 
             if not self.by_epoch:
                 self.scheduler.step()
@@ -138,9 +124,7 @@ class UNet(Base_method):
             runner._iter += 1
 
             if self.rank == 0:
-                log_buffer = 'train loss: {:.4f}'.format(loss.item())
-                log_buffer += ' | train mse loss: {:.4f}'.format(mae.item())
-                log_buffer += ' | train reg loss: {:.4f}'.format(mse.item())
+                log_buffer = 'pinball loss: {:.4f}'.format(loss.item())
                 log_buffer += ' | data time: {:.4f}'.format(data_time_m.avg)
                 train_pbar.set_description(log_buffer)
 
@@ -148,4 +132,4 @@ class UNet(Base_method):
 
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
-        return num_updates, total_loss_m, mae_m, mse_m, pinball_m, winkler_m, coverage_m, mil_m, eta
+        return num_updates, pinball_m, eta

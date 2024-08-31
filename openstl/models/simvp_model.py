@@ -100,7 +100,7 @@ class SimVP_Model(nn.Module):
         #Y_hi = self.dec(hid_hi, skip)
         #Y = torch.stack([Y_lo, Y_m, Y_hi], dim=1)
         # use einops and arrange it as B Q T C H W
-        Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
+        Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=7, H=H, W=W, C=C)
         #Y = self.dec(hid, skip, [gamma1,beta1])
         #Y = rearrange(Y, '(B T) Q C H W -> B Q T C H W', B=B, T=T, Q=3, H=H, W=W, C=C)
 
@@ -194,15 +194,21 @@ class Decoder(nn.Module):
                      act_inplace=act_inplace, filmed=False)
         )
         self.readout = nn.Conv2d(C_hid, C_out, 1)
-        self.lower = nn.Conv2d(C_hid, C_out, kernel_size=1)
-        self.upper = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        self.lower1 = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        self.lower2 = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        self.lower3 = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        self.upper1 = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        self.upper2 = nn.Conv2d(C_hid, C_out, kernel_size=1)
+        self.upper3 = nn.Conv2d(C_hid, C_out, kernel_size=1)
 
     def forward(self, hid, enc1=None, condi=None):
         for i in range(0, len(self.dec)-1):
             hid = self.dec[i](hid, condi)
         Y = self.dec[-1](hid + enc1, condi)
         #Y = self.readout(Y)
-        Y = torch.cat((self.lower(Y).unsqueeze(1), self.readout(Y).unsqueeze(1), self.upper(Y).unsqueeze(1)), dim=1)
+        Y = torch.cat((self.lower1(Y).unsqueeze(1), self.lower2(Y).unsqueeze(1), self.lower3(Y).unsqueeze(1),
+                       self.readout(Y).unsqueeze(1),
+                         self.upper1(Y).unsqueeze(1), self.upper2(Y).unsqueeze(1), self.upper3(Y).unsqueeze(1)), dim=1)
         return Y
 
 

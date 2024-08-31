@@ -64,6 +64,10 @@ class SimVPQCondC_Model(nn.Module):
     def forward(self, inputs):
         #x_raw = inputs[0]
         #quantiles = inputs[1]
+
+        interval = (inputs[1][:,2:3]-inputs[1][:,0:1])
+        # reshape
+
         quantiles = None
         try:
             x_raw = torch.cat((inputs[0], inputs[1]), dim=2)

@@ -13,6 +13,7 @@ from .layers import (HorBlock, ChannelAggregationFFN, MultiOrderGatedAggregation
 
 import pdb
 
+# TODO: try sigmoid activations; positive for scale 
 class FilmGen(nn.Module):
     """ Multi-layer Perceptron to generate gamma and beta. """
     def __init__(self, input_size, layer_sizes, output_size):
@@ -51,7 +52,7 @@ def film(input, gamma, beta):
     view_shape = list(input.size())
     for i in range(2, len(view_shape)):
         view_shape[i] = 1
-    return gamma.view(view_shape) * input + beta.view(view_shape)
+    return gamma.view(view_shape) * (input + beta.view(view_shape))
 
 class FiLM(nn.Module):
     r"""Applies Feature-wise Linear Modulation to the incoming data as described

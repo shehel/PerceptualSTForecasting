@@ -24,7 +24,6 @@ class PredRNN(Base_method):
         self.model = self._build_model(self.args)
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
         self.criterion = IntervalScores()
-        self.adapt_weights = torch.tensor([1.0,0,1,0])
 
 
     def _build_model(self, args):
@@ -59,7 +58,7 @@ class PredRNN(Base_method):
 
         img_gen, _ = self.model(test_dat, real_input_flag, return_loss=False)
         img_gen_list = []
-        for i in range(3):
+        for i in range(7):
             img_gen_list.append(reshape_patch_back(img_gen[:, i], self.args.patch_size))
         img_gen = torch.stack(img_gen_list, dim=1)
         pred_y = img_gen[:, :, -self.args.aft_seq_length:].permute(0, 1,2, 5,3,4).contiguous()
@@ -70,13 +69,7 @@ class PredRNN(Base_method):
         """Train the model with train_loader."""
 
         data_time_m = AverageMeter()
-        total_loss_m = AverageMeter()
-        mae_m = AverageMeter()
-        mse_m = AverageMeter()
         pinball_m = AverageMeter()
-        winkler_m = AverageMeter()
-        coverage_m = AverageMeter()
-        mil_m = AverageMeter()
 
         self.model.train()
         if self.by_epoch:
@@ -105,24 +98,16 @@ class PredRNN(Base_method):
             with self.amp_autocast():
                 img_gen, loss = self.model(ims, real_input_flag)
                 img_gen_list = []
-                for i in range(3):
+                for i in range(7):
                     img_gen_list.append(reshape_patch_back(img_gen[:, i], self.args.patch_size))
                 img_gen = torch.stack(img_gen_list, dim=1)
                 pred_y = img_gen[:, :, -self.args.aft_seq_length:].permute(0, 1,2, 5,3,4).contiguous()
+                loss = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:])
 
-                mae,mse,pinball_score,winkler_score, coverage, mil = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:,0,0,0])
-
-                loss = self.adapt_weights[0] * mae + self.adapt_weights[1] * mse + self.adapt_weights[2] * pinball_score + self.adapt_weights[3] * winkler_score
 
             if not self.dist:
 
-                total_loss_m.update(loss.item(), batch_x.size(0))
-                mae_m.update(mae.item(), batch_x.size(0))
-                mse_m.update(mse.item(), batch_x.size(0))
-                pinball_m.update(pinball_score.item(), batch_x.size(0))
-                winkler_m.update(winkler_score.item(), batch_x.size(0))
-                coverage_m.update(coverage.item(), batch_x.size(0))
-                mil_m.update(mil.item(), batch_x.size(0))
+                pinball_m.update(loss.item(), batch_x.size(0))
 
 
             if self.loss_scaler is not None:
@@ -141,7 +126,7 @@ class PredRNN(Base_method):
             num_updates += 1
 
             if self.dist:
-                total_loss_m.update(reduce_tensor(loss), batch_x.size(0))
+                pinball_m.update(reduce_tensor(loss), batch_x.size(0))
 
             if not self.by_epoch:
                 self.scheduler.step()
@@ -158,4 +143,4 @@ class PredRNN(Base_method):
         if hasattr(self.model_optim, 'sync_lookahead'):
             self.model_optim.sync_lookahead()
 
-        return num_updates, total_loss_m, mae_m, mse_m, pinball_m, winkler_m, coverage_m, mil_m, eta
+        return num_updates, pinball_m, eta

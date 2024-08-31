@@ -79,7 +79,8 @@ class BaseExperiment(object):
         self._dist = self.args.dist
         self._early_stop = self.args.early_stop_epoch
         
-        self.losses = ['Val Total', 'MAE', 'MSE', 'Pinball', "Winkler", 'Coverage', 'MIL']
+        self.losses = ['Pinball', 'MAE', 'MSE', 'Winkler90', 'Winkler60', 'Winkler30', 'Coverage90', 'MIL90', 'Coverage60', 'MIL60',
+                       'Coverage30', 'MIL30']
 
         self._preparation(dataloaders)
         if self._rank == 0:
@@ -299,7 +300,7 @@ class BaseExperiment(object):
         """Plot the basic infomation of supported methods"""
         T, C, H, W = self.args.in_shape
         if self.args.method in ['simvp', 'unet', 'tau', 'simvpresid', 'unetresid', 'simvpgan']:
-            input_dummy = [torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device), torch.ones(1, 1).to(self.device)]
+            input_dummy = [torch.ones(1, self.args.pre_seq_length, C, H, W).to(self.device), torch.ones(1, 4, 1,32,32).to(self.device)]
         elif self.args.method == 'simvprnn':
             Hp, Wp = 32, 32
             Cp = 32
@@ -359,7 +360,7 @@ class BaseExperiment(object):
             if self._dist and hasattr(self.train_loader.sampler, 'set_epoch'):
                 self.train_loader.sampler.set_epoch(epoch)
 
-            num_updates, loss_total, mae, mse, pinball_score, winkler_score, coverage, mil, eta = self.method.train_one_epoch(self, self.train_loader,
+            num_updates, loss_total,eta = self.method.train_one_epoch(self, self.train_loader,
                                                                       epoch, num_updates, eta)
 
             self._epoch = epoch
@@ -375,18 +376,18 @@ class BaseExperiment(object):
                         epoch + 1, len(self.train_loader), cur_lr, loss_total.avg, vali_loss))
                     logger.report_scalar(title='Training Report', 
                         series='Train Loss', value=loss_total.avg, iteration=epoch)
-                    logger.report_scalar(title='Training Report', 
-                        series='Train MAE', value=mae.avg, iteration=epoch)
-                    logger.report_scalar(title='Training Report', 
-                        series='Train MSE', value=mse.avg, iteration=epoch)
-                    logger.report_scalar(title='Training Report', 
-                        series='Train Pinball', value=pinball_score.avg, iteration=epoch)
-                    logger.report_scalar(title='Training Report',
-                        series='Train Winkler', value=winkler_score.avg, iteration=epoch)
-                    logger.report_scalar(title='Training Report',
-                        series='Train Coverage', value=coverage.avg, iteration=epoch)
-                    logger.report_scalar(title='Training Report',
-                        series='Train MIL', value=mil.avg, iteration=epoch)
+                    # logger.report_scalar(title='Training Report',
+                    #     series='Train MAE', value=mae.avg, iteration=epoch)
+                    # logger.report_scalar(title='Training Report',
+                    #     series='Train MSE', value=mse.avg, iteration=epoch)
+                    # logger.report_scalar(title='Training Report',
+                    #     series='Train Pinball', value=pinball_score.avg, iteration=epoch)
+                    # logger.report_scalar(title='Training Report',
+                    #     series='Train Winkler', value=winkler_score.avg, iteration=epoch)
+                    # logger.report_scalar(title='Training Report',
+                    #     series='Train Coverage', value=coverage.avg, iteration=epoch)
+                    # logger.report_scalar(title='Training Report',
+                    #     series='Train MIL', value=mil.avg, iteration=epoch)
                     early_stop_decision =recorder(vali_loss, self.method.model, self.path, epoch, early_stop)
                     self._save(name='latest')
             if self._use_gpu and self.args.empty_cache:
@@ -457,9 +458,13 @@ class BaseExperiment(object):
                 # Plot the inputs, true values, and predictions for each pixel
                 plt.plot(shifted_x_values, results['inputs'][i, :, 0, y, x], label=f"Inputs at {pixel}")
                 plt.plot(x_values, results['trues'][i, :, 0, y, x], label=f"True at {pixel}")
-                plt.plot(x_values, results['preds'][i, 0,:, 0, y, x], label=f"Preds_l at {pixel}")
-                plt.plot(x_values, results['preds'][i, 1,:, 0, y, x], label=f"Preds_m at {pixel}")
-                plt.plot(x_values, results['preds'][i, 2,:, 0, y, x], label=f"Preds_h at {pixel}")
+                plt.plot(x_values, results['preds'][i, 0,:, 0, y, x], label=f"Preds_l1 at {pixel}")
+                plt.plot(x_values, results['preds'][i, 1,:, 0, y, x], label=f"Preds_l2 at {pixel}")
+                plt.plot(x_values, results['preds'][i, 2,:, 0, y, x], label=f"Preds_l3 at {pixel}")
+                plt.plot(x_values, results['preds'][i, 3,:, 0, y, x], label=f"Preds_m at {pixel}")
+                plt.plot(x_values, results['preds'][i, 4,:, 0, y, x], label=f"Preds_h1 at {pixel}")
+                plt.plot(x_values, results['preds'][i, 5,:, 0, y, x], label=f"Preds_h2 at {pixel}")
+                plt.plot(x_values, results['preds'][i, 6,:, 0, y, x], label=f"Preds_h3 at {pixel}")
 
                 # Show the legend and get the current figure
                 plt.legend()
@@ -484,9 +489,13 @@ class BaseExperiment(object):
 
             # Plot the true values and predictions over the specified range for each pixel
             plt.plot(results['trues'][:240, 0, 0, y, x], label=f"True at {pixel}")
-            plt.plot(results['preds'][:240, 0,0, 0, y, x], label=f"Preds_l at {pixel}")
-            plt.plot(results['preds'][:240, 1,0, 0, y, x], label=f"Preds_m at {pixel}")
-            plt.plot(results['preds'][:240, 2,0, 0, y, x], label=f"Preds_h at {pixel}")
+            plt.plot(results['preds'][:240, 0,0, 0, y, x], label=f"Preds_l1 at {pixel}")
+            plt.plot(results['preds'][:240, 1,0, 0, y, x], label=f"Preds_l2 at {pixel}")
+            plt.plot(results['preds'][:240, 2,0, 0, y, x], label=f"Preds_l3 at {pixel}")
+            plt.plot(results['preds'][:240, 3,0, 0, y, x], label=f"Preds_m at {pixel}")
+            plt.plot(results['preds'][:240, 4,0, 0, y, x], label=f"Preds_h1 at {pixel}")
+            plt.plot(results['preds'][:240, 5,0, 0, y, x], label=f"Preds_h2 at {pixel}")
+            plt.plot(results['preds'][:240, 6,0, 0, y, x], label=f"Preds_h3 at {pixel}")
 
             # Show the legend and get the current figure
             plt.legend()
@@ -590,19 +599,19 @@ class BaseExperiment(object):
         results = self.method.test_one_epoch(self, self.test_loader)
         
         self.call_hook('after_val_epoch')
-        print (results["loss"])
-
+        for loss in results["loss"]:
+            print(loss.item())
         # inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
 
-        if 'weather' in self.args.dataname:
-            metric_list, spatial_norm = self.args.metrics, True
-            channel_names = self.test_loader.dataset.data_name if 'mv' in self.args.dataname else None
-        else:
-            metric_list, spatial_norm, channel_names = self.args.metrics, False, None
-        eval_res, eval_log = metric(results['preds'], results['trues'],
-                                    self.test_loader.dataset.mean, self.test_loader.dataset.std,
-                                    metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
-        results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
+        # if 'weather' in self.args.dataname:
+        #     metric_list, spatial_norm = self.args.metrics, True
+        #     channel_names = self.test_loader.dataset.data_name if 'mv' in self.args.dataname else None
+        # else:
+        #     metric_list, spatial_norm, channel_names = self.args.metrics, False, None
+        # eval_res, eval_log = metric(results['preds'], results['trues'],
+        #                             self.test_loader.dataset.mean, self.test_loader.dataset.std,
+        #                             metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
+        # results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
 
         # clamp trues and preds to be between 0 and 255 and convert to uint8
         #results["trues"] = np.clip(results["trues"], 0, 255).astype(np.uint8)

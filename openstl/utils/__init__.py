@@ -5,7 +5,7 @@ from .collect import (gather_tensors, gather_tensors_batch, nondist_forward_coll
 from .config_utils import Config, check_file_exist
 from .main_utils import (set_seed, setup_multi_processes, print_log, output_namespace,
                          collect_env, check_dir, get_dataset, count_parameters, measure_throughput,
-                         load_config, update_config, weights_to_cpu, IntervalScores,
+                         load_config, update_config, weights_to_cpu, IntervalScores, mis_loss_func, eval_quantiles, FourQuantileRegressionLoss,
                          init_dist, init_random_seed, get_dist_info, reduce_tensor)
 from .parser import create_parser, default_parser
 from .predrnn_utils import (reserve_schedule_sampling_exp, schedule_sampling, reshape_patch,

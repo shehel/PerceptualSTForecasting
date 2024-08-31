@@ -2,6 +2,7 @@ from typing import Dict, List, Union
 import numpy as np
 
 import torch
+import torch.nn.functional as F
 from torch.nn.parallel import DistributedDataParallel as NativeDDP
 from contextlib import suppress
 from timm.utils import NativeScaler
@@ -10,6 +11,7 @@ from timm.utils.agc import adaptive_clip_grad
 from openstl.core import metric
 from openstl.core.optim_scheduler import get_optim_scheduler
 from openstl.utils import gather_tensors_batch, get_dist_info, ProgressBar
+from openstl.utils.main_utils import mis_loss_func, eval_quantiles
 
 has_native_amp = False
 import pdb
@@ -165,9 +167,22 @@ class Base_method(object):
         for i, (batch_x, batch_y, batch_masks, batch_quantiles) in enumerate(data_loader):
             with torch.no_grad():
                 batch_x, batch_y, batch_quantiles = batch_x.to(self.device), batch_y.to(self.device), batch_quantiles.to(self.device)
-                interval = (batch_quantiles[:,2:3]-batch_quantiles[:,0:1])
-                pred_y, _ = self._predict([batch_x, interval])
-                #pred_y, _ = self._predict([batch_x, batch_quantiles], batch_y)
+                #interval = (batch_quantiles[:,2:3]-batch_quantiles[:,0:1])
+                #pred_y, _ = self._predict([batch_x, interval])
+                interval1 = (batch_quantiles[:,0,:,:,:,:]-batch_quantiles[:,6])
+                # create a tensor in shape of interval1 filled with 0.9
+                interval1 = torch.full_like(interval1, 0.9)
+                pred_y1, _ = self._predict([batch_x, interval1])
+
+                #interval2 = (batch_quantiles[:,1,:,:,:,:]-batch_quantiles[:,5])
+                interval1 = torch.full_like(interval1, 0.6)
+                pred_y2, _ = self._predict([batch_x, interval1])
+                #interval3 = (batch_quantiles[:,2,:,:,:,:]-batch_quantiles[:,4])
+                interval1 = torch.full_like(interval1, 0.3)
+                pred_y3, _ = self._predict([batch_x, interval1])
+                pred_y = torch.cat((pred_y1[:, 0:1], pred_y2[:,0:1], pred_y3[:, 0:1],
+                        pred_y1[:, 1:2], pred_y3[:, 2:3], pred_y2[:,2:3], pred_y1[:, 2:3]), dim=1)
+#pred_y, _ = self._predict([batch_x, batch_quantiles], batch_y)
                 #pred_y_m, _ = self._predict([batch_x, batch_quantiles[:,1:2]])
                 #pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0:1]])
                 #pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2:3]])
@@ -220,20 +235,31 @@ class Base_method(object):
         #losses_m = self.criterion_cpu(preds, trues)
         masks = torch.tensor(results_all['masks'])
         # create quantiles tensor of batch_sizex2 with static_ch.shape[0] as batch_size and 2 channels where the first is always 0.05 and the second is always 0.95
-        quantiles = torch.zeros((masks.shape[0], 3))
+        quantiles = torch.zeros((masks.shape[0], 7))
         quantiles[:,0] = 0.05
-        quantiles[:,1] = 0.5
-        quantiles[:,2] = 0.95
+        quantiles[:,1] = 0.2
+        quantiles[:,2] = 0.35
+        quantiles[:,3] = 0.5
+        quantiles[:,4] = 0.65
+        quantiles[:,5] = 0.8
+        quantiles[:,6] = 0.95
+        loss= self.criterion2(preds[:,:,:], trues[:,:,:], masks[:,:,:], quantiles)
 
-        # set static_ch to be a zeros tensor with shape static_ch.shape
-        #static_ch = torch.zeros_like(static_ch)
-        #static_ch[:,:,0:1,64,64] = 1
-        #static_ch = torch.where(static_ch > 0, torch.ones_like(static_ch), torch.zeros_like(static_ch))
-        losses_m= self.criterion(preds[:,:,:], trues[:,:,:], masks[:,:,:], quantiles, train_run=False)
-        #dilate = self.val_criterion(preds, trues, static_ch)
-        results_all["loss"] = [0]+losses_m
-        mae,mse,pinball_score,winkler_score,coverage,mil = losses_m
-        results_all["loss"][0] = self.adapt_weights[0] * mae + self.adapt_weights[1] * mse + self.adapt_weights[2] * pinball_score + self.adapt_weights[3] * winkler_score
+        mae = torch.mean(F.l1_loss(preds[:,3,:,:,:].squeeze(), trues.squeeze(), reduction='none')*masks)
+        mse = torch.mean(F.mse_loss(preds[:,3,:,:,:].squeeze(), trues.squeeze(), reduction='none')*masks)
+
+        winkler_score90 = mis_loss_func(preds[:,[0,6]], trues, 0.1)
+        winkler_score60 = mis_loss_func(preds[:,[1,5]], trues, 0.4)
+        winkler_score30 = mis_loss_func(preds[:,[2,4]], trues, 0.7)
+
+        coverage90, mil90 = eval_quantiles(preds[:,0], preds[:,6], trues, masks)
+        coverage60, mil60 = eval_quantiles(preds[:,1], preds[:,5], trues, masks)
+        coverage30, mil30 = eval_quantiles(preds[:,2], preds[:,4], trues, masks)
+
+        results_all["loss"] = [loss, mae, mse, winkler_score90, winkler_score60, winkler_score30,
+                                coverage90, mil90, coverage60, mil60,
+                                coverage30,mil30
+                               ]
 
         return results_all
 

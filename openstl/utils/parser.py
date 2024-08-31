@@ -134,7 +134,7 @@ def default_parser():
         'use_gpu': True,
         'fp16': False,
         'torchscript': False,
-        'seed': 100,
+        'seed': 50,
         'diff_seed': False,
         'fps': False,
         'empty_cache': True,
