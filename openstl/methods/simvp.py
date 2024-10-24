@@ -22,12 +22,11 @@ class SimVP(Base_method):
         Base_method.__init__(self, args, device, steps_per_epoch)
         self.model = self._build_model(self.config)
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
-        self.criterion = IntervalScores()
-        self.criterion2 = FourQuantileRegressionLoss(params={"q_lo_weight": 1, "q_hi_weight": 1, "m_weight": 1, "lo2_weight": 1, "hi2_weight": 1})
+        self.criterion = IntervalScores(quantile_weights=[1,1,1])
 
     def _build_model(self, args):
 
-        model = SimVPQCondC_Model(**args)
+        model = SimVP_Model(**args)
         model = model.to(self.device)
         return model
 
@@ -79,14 +78,9 @@ class SimVP(Base_method):
             with self.amp_autocast():
                 #pred_y, _ = self._predict([batch_x, batch_quantiles[:,1:2]])
                 #pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0:1]])
-                interval = (batch_quantiles[:,2]-batch_quantiles[:,0])
-                pred_y, _ = self._predict([batch_x, interval])
-                # interval1 = (batch_quantiles[:,0,:,:,:,:]-batch_quantiles[:,6])
-                # interval2 = (batch_quantiles[:,1,:,:,:,:]-batch_quantiles[:,5])
-                # interval3 = (batch_quantiles[:,2,:,:,:,:]-batch_quantiles[:,4])
-                # pred_y1, _ = self._predict([batch_x, interval1])
-                # pred_y2, _ = self._predict([batch_x, interval2])
-                # pred_y3, _ = self._predict([batch_x, interval3])
+                #interval = (batch_quantiles[:,2:3]-batch_quantiles[:,0:1])
+                #pred_y, _ = self._predict([batch_x, interval])
+                pred_y, _ = self._predict([batch_x, batch_quantiles])
                 #pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2:3]])
                 # # create a new dimension at axis 1
                 # pred_y_lo = pred_y_lo.unsqueeze(1)
@@ -98,10 +92,7 @@ class SimVP(Base_method):
 
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
-                #pred_y = torch.cat((pred_y1[:, 0:1], pred_y2[:,0:1], pred_y3[:, 0:1],
-                #pred_y1[:, 1:2], pred_y3[:, 2:3], pred_y2[:,2:3], pred_y1[:, 2:3]), dim=1)
-
-                loss = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:,0,0,0,0])
+                loss, _ = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:])#,0,0,0,0])
 
             if epoch >= 0:
 

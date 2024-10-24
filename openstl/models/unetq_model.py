@@ -51,8 +51,6 @@ class UNetQ_Model(nn.Module):
         self.lower2 = nn.Conv2d(prev_channels, out_ts*out_ch, kernel_size=1)
         self.upper1 = nn.Conv2d(prev_channels, out_ts*out_ch, kernel_size=1)
         self.upper2 = nn.Conv2d(prev_channels, out_ts*out_ch, kernel_size=1)
-        self.lower3 = nn.Conv2d(prev_channels, out_ts*out_ch, kernel_size=1)
-        self.upper3 = nn.Conv2d(prev_channels, out_ts*out_ch, kernel_size=1)
 
     def forward(self, inputs, *args, **kwargs):
         x_raw = inputs[0]
@@ -78,12 +76,10 @@ class UNetQ_Model(nn.Module):
         for i, up in enumerate(self.up_path):
             x = up(x, blocks[-i - 1])
         #x=self.last(x)
-        x = torch.cat((self.lower1(x).unsqueeze(1), self.lower2(x).unsqueeze(1), self.lower3(x).unsqueeze(1),
-                        self.last(x).unsqueeze(1),
-                          self.upper1(x).unsqueeze(1), self.upper2(x).unsqueeze(1), self.upper3(x).unsqueeze(1)), dim=1)
+        x = torch.cat((self.lower1(x).unsqueeze(1), self.lower2(x).unsqueeze(1), self.last(x).unsqueeze(1), self.upper1(x).unsqueeze(1), self.upper2(x).unsqueeze(1)), dim=1)
         # add an empty dimension at first axis
         x = torch.unsqueeze(x, 2)
-        x = x.reshape(B, 7, self.out_ts, self.out_ch, H, W)
+        x = x.reshape(B, 5, self.out_ts, self.out_ch, H, W)
         return x, translated
 
     def recon(self, x, *args, **kwargs):

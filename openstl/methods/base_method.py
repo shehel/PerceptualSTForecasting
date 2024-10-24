@@ -169,20 +169,7 @@ class Base_method(object):
                 batch_x, batch_y, batch_quantiles = batch_x.to(self.device), batch_y.to(self.device), batch_quantiles.to(self.device)
                 #interval = (batch_quantiles[:,2:3]-batch_quantiles[:,0:1])
                 #pred_y, _ = self._predict([batch_x, interval])
-                interval1 = (batch_quantiles[:,0,:,:,:,:]-batch_quantiles[:,6])
-                # create a tensor in shape of interval1 filled with 0.9
-                interval1 = torch.full_like(interval1, 0.9)
-                pred_y1, _ = self._predict([batch_x, interval1])
-
-                #interval2 = (batch_quantiles[:,1,:,:,:,:]-batch_quantiles[:,5])
-                interval1 = torch.full_like(interval1, 0.6)
-                pred_y2, _ = self._predict([batch_x, interval1])
-                #interval3 = (batch_quantiles[:,2,:,:,:,:]-batch_quantiles[:,4])
-                interval1 = torch.full_like(interval1, 0.3)
-                pred_y3, _ = self._predict([batch_x, interval1])
-                pred_y = torch.cat((pred_y1[:, 0:1], pred_y2[:,0:1], pred_y3[:, 0:1],
-                        pred_y1[:, 1:2], pred_y3[:, 2:3], pred_y2[:,2:3], pred_y1[:, 2:3]), dim=1)
-#pred_y, _ = self._predict([batch_x, batch_quantiles], batch_y)
+                pred_y, _ = self._predict([batch_x, batch_quantiles], batch_y)
                 #pred_y_m, _ = self._predict([batch_x, batch_quantiles[:,1:2]])
                 #pred_y_lo, _ = self._predict([batch_x, batch_quantiles[:,0:1]])
                 #pred_y_hi, _ = self._predict([batch_x, batch_quantiles[:,2:3]])
@@ -234,32 +221,38 @@ class Base_method(object):
         trues = torch.tensor(results_all['trues'])
         #losses_m = self.criterion_cpu(preds, trues)
         masks = torch.tensor(results_all['masks'])
+
         # create quantiles tensor of batch_sizex2 with static_ch.shape[0] as batch_size and 2 channels where the first is always 0.05 and the second is always 0.95
-        quantiles = torch.zeros((masks.shape[0], 7))
-        quantiles[:,0] = 0.05
-        quantiles[:,1] = 0.2
-        quantiles[:,2] = 0.35
-        quantiles[:,3] = 0.5
-        quantiles[:,4] = 0.65
-        quantiles[:,5] = 0.8
-        quantiles[:,6] = 0.95
-        loss= self.criterion2(preds[:,:,:], trues[:,:,:], masks[:,:,:], quantiles)
+        quantiles = torch.tensor(self.data_loader.dataset.quantiles).repeat(masks.shape[0], 1)
+        
+        loss, pinball_losses = self.criterion(preds[:,:,:], trues[:,:,:], masks[:,:,:], quantiles, train_run=False)
 
-        mae = torch.mean(F.l1_loss(preds[:,3,:,:,:].squeeze(), trues.squeeze(), reduction='none')*masks)
-        mse = torch.mean(F.mse_loss(preds[:,3,:,:,:].squeeze(), trues.squeeze(), reduction='none')*masks)
+        middle_index = quantiles.shape[1] // 2
+        mae = torch.mean(F.l1_loss(preds[:,middle_index,:,:,:].squeeze(), trues.squeeze(), reduction='none') * masks)
+        mse = torch.mean(F.mse_loss(preds[:,middle_index,:,:,:].squeeze(), trues.squeeze(), reduction='none') * masks)
 
-        winkler_score90 = mis_loss_func(preds[:,[0,6]], trues, 0.1)
-        winkler_score60 = mis_loss_func(preds[:,[1,5]], trues, 0.4)
-        winkler_score30 = mis_loss_func(preds[:,[2,4]], trues, 0.7)
+        winkler_scores = []
+        coverages = []
+        mils = []
 
-        coverage90, mil90 = eval_quantiles(preds[:,0], preds[:,6], trues, masks)
-        coverage60, mil60 = eval_quantiles(preds[:,1], preds[:,5], trues, masks)
-        coverage30, mil30 = eval_quantiles(preds[:,2], preds[:,4], trues, masks)
+        num_quantiles = len(self.data_loader.dataset.quantiles)
+        for i in range(num_quantiles // 2):
+            lo_idx = i
+            hi_idx = num_quantiles - 1 - i
+            alpha = 1 - self.data_loader.dataset.quantiles[hi_idx] + self.data_loader.dataset.quantiles[lo_idx]
 
-        results_all["loss"] = [loss, mae, mse, winkler_score90, winkler_score60, winkler_score30,
-                                coverage90, mil90, coverage60, mil60,
-                                coverage30,mil30
-                               ]
+            winkler_scores.append(mis_loss_func(preds[:, [lo_idx, hi_idx]], trues, alpha))
+            coverage, mil = eval_quantiles(preds[:, lo_idx], preds[:, hi_idx], trues, masks)
+            coverages.append(coverage)
+            mils.append(mil)
+
+        results_all["loss"] = loss
+        results_all["pinball_losses"] = pinball_losses
+        results_all["mae"] = mae
+        results_all["mse"] = mse
+        results_all["winkler_scores"] = winkler_scores
+        results_all["coverages"] = coverages
+        results_all["mils"] = mils
 
         return results_all
 

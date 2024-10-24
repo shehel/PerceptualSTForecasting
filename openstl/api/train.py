@@ -79,8 +79,6 @@ class BaseExperiment(object):
         self._dist = self.args.dist
         self._early_stop = self.args.early_stop_epoch
         
-        self.losses = ['Pinball', 'MAE', 'MSE', 'Winkler90', 'Winkler60', 'Winkler30', 'Coverage90', 'MIL90', 'Coverage60', 'MIL60',
-                       'Coverage30', 'MIL30']
 
         self._preparation(dataloaders)
         if self._rank == 0:
@@ -413,11 +411,16 @@ class BaseExperiment(object):
         """A validation loop during training"""
         self.call_hook('before_val_epoch')
         results = self.method.vali_one_epoch(self, self.vali_loader)
-        for loss, name in zip(results['loss'], self.losses):
-            logger.report_scalar(title='Training Report',
-                        series=name, value=loss.cpu().numpy(), iteration=epoch)
+        for name, value in results.items():
+            if name in self.losses:
+                logger.report_scalar(title='Training Report',
+                                     series=name, value=value.cpu().numpy(), iteration=epoch)
+            elif name in ['winkler_scores', 'coverages', 'mils', 'pinball_losses']:
+                for idx, val in enumerate(value):
+                    logger.report_scalar(title='Training Report',
+                                         series=f"{name}_{idx}", value=val.cpu().numpy(), iteration=epoch)
 
-        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,1,:,0,:,:,np.newaxis],
+        plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,self.vali_loader.dataset.quantiles.shape[0]//2,:,0,:,:,np.newaxis],
                     results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
 
         shift_amount = 4  # Define the amount by which you want to shift the 'inputs' on the x-axis
@@ -440,31 +443,17 @@ class BaseExperiment(object):
         #     (42, 95),
         #     (60, 90)]
 
-        pixel_list = [(10, 10),
-            (5, 25),
-            (18, 13),
-            (11, 16),
-            (20, 24),
-            (30, 19),
-            (24, 7),
-            (18, 5),
-            (16, 20)]
         # Iterate over each time step for which we want to visualize the data
         for i in [10, 50, 100, 150]:
             # Iterate over each pixel coordinate
-            for pixel in pixel_list:
+            for pixel in self.vali_loader.dataset.pixel_list:
                 y, x = pixel  # Unpack the tuple into x and y coordinates
 
                 # Plot the inputs, true values, and predictions for each pixel
                 plt.plot(shifted_x_values, results['inputs'][i, :, 0, y, x], label=f"Inputs at {pixel}")
                 plt.plot(x_values, results['trues'][i, :, 0, y, x], label=f"True at {pixel}")
-                plt.plot(x_values, results['preds'][i, 0,:, 0, y, x], label=f"Preds_l1 at {pixel}")
-                plt.plot(x_values, results['preds'][i, 1,:, 0, y, x], label=f"Preds_l2 at {pixel}")
-                plt.plot(x_values, results['preds'][i, 2,:, 0, y, x], label=f"Preds_l3 at {pixel}")
-                plt.plot(x_values, results['preds'][i, 3,:, 0, y, x], label=f"Preds_m at {pixel}")
-                plt.plot(x_values, results['preds'][i, 4,:, 0, y, x], label=f"Preds_h1 at {pixel}")
-                plt.plot(x_values, results['preds'][i, 5,:, 0, y, x], label=f"Preds_h2 at {pixel}")
-                plt.plot(x_values, results['preds'][i, 6,:, 0, y, x], label=f"Preds_h3 at {pixel}")
+                for idx, quantile in enumerate(self.vali_loader.dataset.quantiles):
+                    plt.plot(x_values, results['preds'][i, idx, :, 0, y, x], label=f"Preds_q{quantile} at {pixel}")
 
                 # Show the legend and get the current figure
                 plt.legend()
@@ -484,18 +473,13 @@ class BaseExperiment(object):
 
         # The second part of the visualization seems to be a time series plot for the first pixel.
         # If similar time series plots are required for all pixels, iterate over the pixel list:
-        for pixel in pixel_list:
+        for pixel in self.vali_loader.dataset.pixel_list:
             y, x = pixel  # Unpack the tuple into x and y coordinates
 
             # Plot the true values and predictions over the specified range for each pixel
             plt.plot(results['trues'][:240, 0, 0, y, x], label=f"True at {pixel}")
-            plt.plot(results['preds'][:240, 0,0, 0, y, x], label=f"Preds_l1 at {pixel}")
-            plt.plot(results['preds'][:240, 1,0, 0, y, x], label=f"Preds_l2 at {pixel}")
-            plt.plot(results['preds'][:240, 2,0, 0, y, x], label=f"Preds_l3 at {pixel}")
-            plt.plot(results['preds'][:240, 3,0, 0, y, x], label=f"Preds_m at {pixel}")
-            plt.plot(results['preds'][:240, 4,0, 0, y, x], label=f"Preds_h1 at {pixel}")
-            plt.plot(results['preds'][:240, 5,0, 0, y, x], label=f"Preds_h2 at {pixel}")
-            plt.plot(results['preds'][:240, 6,0, 0, y, x], label=f"Preds_h3 at {pixel}")
+            for idx, quantile in enumerate(self.vali_loader.dataset.quantiles):
+                plt.plot(results['preds'][:240, idx, 0, 0, y, x], label=f"Preds_q{quantile} at {pixel}")
 
             # Show the legend and get the current figure
             plt.legend()
@@ -544,8 +528,8 @@ class BaseExperiment(object):
 
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
 
-        for loss in results["loss"]:
-            print(loss.item())
+        for key, value in results.items():
+            print(f"{key}: {value}")
         # TODO Fix inp_mean calculation since adding by results will make it expand dims
 
         #inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
@@ -560,15 +544,15 @@ class BaseExperiment(object):
         #preds = preds[:,:,0::2]
         #trues = trues[:,:,2:3]#, 62-10,92-40]
 
-        if 'weather' in self.args.dataname:
-            metric_list, spatial_norm = self.args.metrics, True
-            channel_names = self.test_loader.dataset.data_name if 'mv' in self.args.dataname else None
-        else:
-            metric_list, spatial_norm, channel_names = self.args.metrics, False, None
-        eval_res, eval_log = metric(results['preds'], results['trues'],
-                                    self.test_loader.dataset.mean, self.test_loader.dataset.std,
-                                    metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
-        results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
+        # if 'weather' in self.args.dataname:
+        #     metric_list, spatial_norm = self.args.metrics, True
+        #     channel_names = self.test_loader.dataset.data_name if 'mv' in self.args.dataname else None
+        # else:
+        #     metric_list, spatial_norm, channel_names = self.args.metrics, False, None
+        # eval_res, eval_log = metric(results['preds'], results['trues'],
+        #                             self.test_loader.dataset.mean, self.test_loader.dataset.std,
+        #                             metrics=metric_list, channel_names=channel_names, spatial_norm=spatial_norm)
+        # results['metrics'] = np.array([eval_res['mae'], eval_res['mse']])
 
         # if self._rank == 0:
         #     print_log(eval_log)
@@ -582,7 +566,7 @@ class BaseExperiment(object):
         #         for np_data in ['metrics', 'trues', 'preds']:
         #             np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 
-        return eval_res['mse']
+        return 0#eval_res['mse']
 
     def inference(self, best_model=True):
         """A inference loop of STL methods"""
@@ -599,8 +583,9 @@ class BaseExperiment(object):
         results = self.method.test_one_epoch(self, self.test_loader)
         
         self.call_hook('after_val_epoch')
-        for loss in results["loss"]:
-            print(loss.item())
+
+        for key, value in results.items():
+            print(f"{key}: {value}")
         # inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
 
         # if 'weather' in self.args.dataname:
@@ -626,4 +611,5 @@ class BaseExperiment(object):
         #         np.save(osp.join(folder_path, np_data + '.npy'), results[np_data])
 
         return None
+
 

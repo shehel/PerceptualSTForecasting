@@ -58,7 +58,7 @@ class PredRNN(Base_method):
 
         img_gen, _ = self.model(test_dat, real_input_flag, return_loss=False)
         img_gen_list = []
-        for i in range(7):
+        for i in range(5):
             img_gen_list.append(reshape_patch_back(img_gen[:, i], self.args.patch_size))
         img_gen = torch.stack(img_gen_list, dim=1)
         pred_y = img_gen[:, :, -self.args.aft_seq_length:].permute(0, 1,2, 5,3,4).contiguous()
@@ -98,7 +98,7 @@ class PredRNN(Base_method):
             with self.amp_autocast():
                 img_gen, loss = self.model(ims, real_input_flag)
                 img_gen_list = []
-                for i in range(7):
+                for i in range(5):
                     img_gen_list.append(reshape_patch_back(img_gen[:, i], self.args.patch_size))
                 img_gen = torch.stack(img_gen_list, dim=1)
                 pred_y = img_gen[:, :, -self.args.aft_seq_length:].permute(0, 1,2, 5,3,4).contiguous()

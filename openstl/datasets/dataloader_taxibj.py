@@ -11,7 +11,7 @@ from openstl.datasets.utils import create_loader
 class TaxibjDataset(Dataset):
     """Taxibj <https://arxiv.org/abs/1610.00081>`_ Dataset"""
 
-    def __init__(self, X, Y, use_augment=False, test=False):
+    def __init__(self, X, Y, use_augment=False, test=False, quantiles=[0.05, 0.5, 0.95]):
         super(TaxibjDataset, self).__init__()
         self.X = (X+1) / 2  # channel is 2
         self.Y = (Y+1) / 2
@@ -21,6 +21,16 @@ class TaxibjDataset(Dataset):
         self.test = test
         self.perm = False
         self.static_ch = self.X.mean(axis=(0,1),keepdims=True)
+        self.quantiles = np.array(quantiles)
+        self.pixel_list = [(10, 10),
+            (5, 25),
+            (18, 13),
+            (11, 16),
+            (20, 24),
+            (30, 19),
+            (24, 7),
+            (18, 5),
+            (16, 20)]
 
 
     def _augment_seq(self, seqs):
@@ -56,24 +66,8 @@ class TaxibjDataset(Dataset):
         m_quantile = 0.5
         m_quantile = np.repeat(m_quantile, 4*32*32).reshape(4,1,32,32)
 
-        if self.test:
-            low1_quantile = np.repeat(0.05, 4*32*32).reshape(4,1,32,32)
-            high3_quantile = np.repeat(0.95, 4*32*32).reshape(4,1,32,32)
-            low2_quantile = np.repeat(0.2, 4*32*32).reshape(4,1,32,32)
-            high2_quantile = np.repeat(0.8, 4*32*32).reshape(4,1,32,32)
-            low3_quantile = np.repeat(0.35, 4*32*32).reshape(4,1,32,32)
-            high1_quantile = np.repeat(0.65, 4*32*32).reshape(4,1,32,32)
-            quantiles = np.array([low1_quantile,low2_quantile,low3_quantile,m_quantile,high1_quantile,high2_quantile,high3_quantile])
-        else:
-            low_quantile = random.choice([0.05,0.1,0.15, 0.2, 0.25, 0.3, 0.35,0.4,0.45])
-            high_quantile = 1 - low_quantile
-            low1_quantile = np.repeat(low_quantile, 4*32*32).reshape(4,1,32,32)
-            high1_quantile = np.repeat(high_quantile, 4*32*32).reshape(4,1,32,32)
-            quantiles = np.array([low1_quantile,m_quantile,high1_quantile])
-
-
         #quantiles = np.array([low_quantile, m_quantile, high_quantile])
-        #quantiles = np.array([0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95])
+        quantiles = np.array([0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95])
         # create a array of ones of shape 1,1,32,32
         #static_ch = np.ones((1, 1, 32, 32))
         return data, labels, self.static_ch[0], quantiles
