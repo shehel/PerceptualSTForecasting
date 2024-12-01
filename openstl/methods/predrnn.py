@@ -23,7 +23,8 @@ class PredRNN(Base_method):
         Base_method.__init__(self, args, device, steps_per_epoch)
         self.model = self._build_model(self.args)
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
-        self.criterion = IntervalScores()
+        self.criterion = IntervalScores(quantile_weights=[1,1,1])
+        self.loss_type = 'quantile'
 
 
     def _build_model(self, args):
@@ -58,7 +59,7 @@ class PredRNN(Base_method):
 
         img_gen, _ = self.model(test_dat, real_input_flag, return_loss=False)
         img_gen_list = []
-        for i in range(5):
+        for i in range(3):
             img_gen_list.append(reshape_patch_back(img_gen[:, i], self.args.patch_size))
         img_gen = torch.stack(img_gen_list, dim=1)
         pred_y = img_gen[:, :, -self.args.aft_seq_length:].permute(0, 1,2, 5,3,4).contiguous()
@@ -98,11 +99,11 @@ class PredRNN(Base_method):
             with self.amp_autocast():
                 img_gen, loss = self.model(ims, real_input_flag)
                 img_gen_list = []
-                for i in range(5):
+                for i in range(3):
                     img_gen_list.append(reshape_patch_back(img_gen[:, i], self.args.patch_size))
                 img_gen = torch.stack(img_gen_list, dim=1)
                 pred_y = img_gen[:, :, -self.args.aft_seq_length:].permute(0, 1,2, 5,3,4).contiguous()
-                loss = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:])
+                loss, _ = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:], loss_type=self.loss_type)
 
 
             if not self.dist:

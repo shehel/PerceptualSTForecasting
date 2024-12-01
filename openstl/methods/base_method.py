@@ -12,6 +12,7 @@ from openstl.core import metric
 from openstl.core.optim_scheduler import get_optim_scheduler
 from openstl.utils import gather_tensors_batch, get_dist_info, ProgressBar
 from openstl.utils.main_utils import mis_loss_func, eval_quantiles
+from openstl.core.metrics import MAE, MSE
 
 has_native_amp = False
 import pdb
@@ -223,36 +224,45 @@ class Base_method(object):
         masks = torch.tensor(results_all['masks'])
 
         # create quantiles tensor of batch_sizex2 with static_ch.shape[0] as batch_size and 2 channels where the first is always 0.05 and the second is always 0.95
-        quantiles = torch.tensor(self.data_loader.dataset.quantiles).repeat(masks.shape[0], 1)
+        quantiles = torch.tensor(data_loader.dataset.quantiles, dtype=torch.float).repeat(masks.shape[0], 1)
         
-        loss, pinball_losses = self.criterion(preds[:,:,:], trues[:,:,:], masks[:,:,:], quantiles, train_run=False)
+        pinball_loss, pinball_losses = self.criterion(preds[:,:,:], trues[:,:,:], masks[:,:,:], quantiles, train_run=False, loss_type='quantile')
+        mis_loss, mis_losses = self.criterion(preds[:,:,:], trues[:,:,:], masks[:,:,:], quantiles, train_run=False, loss_type='mis')
 
         middle_index = quantiles.shape[1] // 2
-        mae = torch.mean(F.l1_loss(preds[:,middle_index,:,:,:].squeeze(), trues.squeeze(), reduction='none') * masks)
-        mse = torch.mean(F.mse_loss(preds[:,middle_index,:,:,:].squeeze(), trues.squeeze(), reduction='none') * masks)
 
-        winkler_scores = []
+        # compute the MSE of the total variation computed across the time dimension
+        total_variation_preds = torch.abs(preds[:,middle_index,1:,:,:,:] - preds[:,middle_index,:-1,:,:,:])
+        total_variation_trues = torch.abs(trues[:,1:,:,:,:] - trues[:,:-1,:,:,:])
+        # sum the total variation over the time dimension
+        total_variation_preds = total_variation_preds.sum(dim=1)
+        total_variation_trues = total_variation_trues.sum(dim=1)
+        mse_total_variation = MSE(total_variation_preds.cpu().numpy(), total_variation_trues.cpu().numpy())
+        mae = MAE(preds[:,middle_index,:,:,:].squeeze().cpu().numpy(), trues.squeeze().cpu().numpy())
+        mse = MSE(preds[:,middle_index,:,:,:].squeeze().cpu().numpy(), trues.squeeze().cpu().numpy())
+
         coverages = []
         mils = []
 
-        num_quantiles = len(self.data_loader.dataset.quantiles)
+        num_quantiles = len(data_loader.dataset.quantiles)
         for i in range(num_quantiles // 2):
             lo_idx = i
             hi_idx = num_quantiles - 1 - i
-            alpha = 1 - self.data_loader.dataset.quantiles[hi_idx] + self.data_loader.dataset.quantiles[lo_idx]
 
-            winkler_scores.append(mis_loss_func(preds[:, [lo_idx, hi_idx]], trues, alpha))
-            coverage, mil = eval_quantiles(preds[:, lo_idx], preds[:, hi_idx], trues, masks)
+            # TODO check trues.shape[1] is the appropriate time_step
+            coverage, mil = eval_quantiles(preds[:, lo_idx], preds[:, hi_idx], trues, masks, time_step=trues.shape[1])
             coverages.append(coverage)
             mils.append(mil)
 
-        results_all["loss"] = loss
+        results_all["pinball_loss"] = pinball_loss
+        results_all["mis_loss"] = mis_loss
         results_all["pinball_losses"] = pinball_losses
+        results_all["winkler_scores"] = mis_losses
         results_all["mae"] = mae
         results_all["mse"] = mse
-        results_all["winkler_scores"] = winkler_scores
         results_all["coverages"] = coverages
         results_all["mils"] = mils
+        results_all["mse_total_variation"] = mse_total_variation
 
         return results_all
 

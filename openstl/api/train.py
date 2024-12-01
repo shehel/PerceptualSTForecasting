@@ -412,14 +412,15 @@ class BaseExperiment(object):
         self.call_hook('before_val_epoch')
         results = self.method.vali_one_epoch(self, self.vali_loader)
         for name, value in results.items():
-            if name in self.losses:
-                logger.report_scalar(title='Training Report',
-                                     series=name, value=value.cpu().numpy(), iteration=epoch)
-            elif name in ['winkler_scores', 'coverages', 'mils', 'pinball_losses']:
+            if name in ['inputs', 'trues', 'preds', 'masks']:
+                continue
+            if name in ['winkler_scores', 'coverages', 'mils', 'pinball_losses']:
                 for idx, val in enumerate(value):
                     logger.report_scalar(title='Training Report',
                                          series=f"{name}_{idx}", value=val.cpu().numpy(), iteration=epoch)
-
+            else:
+                logger.report_scalar(title='Training Report',
+                                     series=name, value=value.item(), iteration=epoch)
         plot_tmaps(results['trues'][200,:,0,:,:,np.newaxis], results['preds'][200,self.vali_loader.dataset.quantiles.shape[0]//2,:,0,:,:,np.newaxis],
                     results['inputs'][200,:,0,:,:,np.newaxis], epoch, logger)
 
@@ -511,7 +512,12 @@ class BaseExperiment(object):
             if has_nni:
                 nni.report_intermediate_result(eval_res['mse'].mean())
 
-        return results['loss'][0]
+        if self.method.loss_type == 'mis':
+            return results['mis_loss']
+        elif self.method.loss_type == 'quantile':
+            return results['pinball_loss']
+        else:
+            raise ValueError("Invalid loss_type. Choose 'quantile' or 'mis'.")
 
     def test(self):
         """A testing loop of STL methods"""
@@ -529,7 +535,14 @@ class BaseExperiment(object):
         # inputs is of shape (240,12,8,128,128), sum the first axis and get non-zero indices as a binary mask of shape (240, 1, 8, 128, 128)
 
         for key, value in results.items():
-            print(f"{key}: {value}")
+            if key not in ['inputs', 'trues', 'preds', 'masks']:
+                # if value is a list, loop through it and print each element
+                if isinstance(value, list):
+                    print (f"{key}:")
+                    for val in value:
+                        print(f"{val}")
+                else:
+                    print(f"{key}: {value}")
         # TODO Fix inp_mean calculation since adding by results will make it expand dims
 
         #inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
@@ -585,7 +598,8 @@ class BaseExperiment(object):
         self.call_hook('after_val_epoch')
 
         for key, value in results.items():
-            print(f"{key}: {value}")
+            if key not in ['inputs', 'trues', 'preds', 'masks']:
+                print(f"{key}: {value}")
         # inp_mean = np.mean(results["inputs"], axis=1, keepdims=True)
 
         # if 'weather' in self.args.dataname:

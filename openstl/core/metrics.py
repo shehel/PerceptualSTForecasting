@@ -13,21 +13,20 @@ except:
 def rescale(x):
     return (x - x.max()) / (x.max() - x.min()) * 2 - 1
 
-
 def MAE(pred, true, spatial_norm=False):
     if not spatial_norm:
-        return np.mean(np.abs(pred-true), axis=(0, 1)).mean()
+        return np.mean(np.abs(pred-true), axis=(0, 1)).sum()
     else:
         norm = pred.shape[-1] * pred.shape[-2] * pred.shape[-3]
-        return np.mean(np.abs(pred-true) / norm, axis=(0, 1)).mean()
+        return np.mean(np.abs(pred-true) / norm, axis=(0, 1)).sum()
 
 
 def MSE(pred, true, spatial_norm=False):
     if not spatial_norm:
-        return np.mean((pred-true)**2, axis=(0, 1)).mean()
+        return np.mean((pred-true)**2, axis=(0, 1)).sum()
     else:
         norm = pred.shape[-1] * pred.shape[-2] * pred.shape[-3]
-        return np.mean((pred-true)**2 / norm, axis=(0, 1)).mean()
+        return np.mean((pred-true)**2 / norm, axis=(0, 1)).sum()
 
 
 def RMSE(pred, true, spatial_norm=False):

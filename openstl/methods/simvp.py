@@ -6,7 +6,7 @@ from tqdm import tqdm
 from timm.utils import AverageMeter
 
 from openstl.models import SimVP_Model, SimVPQ_Model, SimVPQCond_Model, SimVPQFiLM_Model, SimVPQFiLMC_Model, SimVPQCondC_Model
-from openstl.utils import reduce_tensor, IntervalScores, FourQuantileRegressionLoss
+from openstl.utils import reduce_tensor, IntervalScores
 from .base_method import Base_method
 
 import pdb
@@ -23,7 +23,7 @@ class SimVP(Base_method):
         self.model = self._build_model(self.config)
         self.model_optim, self.scheduler, self.by_epoch = self._init_optimizer(steps_per_epoch)
         self.criterion = IntervalScores(quantile_weights=[1,1,1])
-
+        self.loss_type = 'mis'
     def _build_model(self, args):
 
         model = SimVP_Model(**args)
@@ -92,7 +92,7 @@ class SimVP(Base_method):
 
                 # clam pred_y to be between 0 and 255
                 #pred_y = torch.clamp(pred_y, 0, 255)
-                loss, _ = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:])#,0,0,0,0])
+                loss, _ = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:], loss_type=self.loss_type)#,0,0,0,0])
 
             if epoch >= 0:
 

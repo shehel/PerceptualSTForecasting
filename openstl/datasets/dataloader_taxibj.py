@@ -67,7 +67,7 @@ class TaxibjDataset(Dataset):
         m_quantile = np.repeat(m_quantile, 4*32*32).reshape(4,1,32,32)
 
         #quantiles = np.array([low_quantile, m_quantile, high_quantile])
-        quantiles = np.array([0.05, 0.2, 0.35, 0.5, 0.65, 0.8, 0.95])
+        quantiles = np.array([0.05, 0.5, 0.95])
         # create a array of ones of shape 1,1,32,32
         #static_ch = np.ones((1, 1, 32, 32))
         return data, labels, self.static_ch[0], quantiles

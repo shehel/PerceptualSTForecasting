@@ -26,7 +26,8 @@ class UNet(Base_method):
         Base_method.__init__(self, args, device, steps_per_epoch)
         self.model = self._build_model(self.config)
         self.model_optim, self.scheduler, self.by_epoch= self._init_optimizer(steps_per_epoch)
-        self.criterion = IntervalScores()
+        self.criterion = IntervalScores(quantile_weights=[1,1,1])
+        self.loss_type = 'mis'
         # set 1 to be a torch.tensor and move it to gpu
 
 
@@ -88,11 +89,11 @@ class UNet(Base_method):
 
             with self.amp_autocast():
 
-                pred_y, _ = self._predict([batch_x, batch_quantiles[:,1]])
+                pred_y, _ = self._predict([batch_x, batch_quantiles])
                 # prepend batch_y[:,0,:,:,:] to pred_y along dimension 1
 
 
-                loss = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:])
+                loss,_ = self.criterion(pred_y[:,:,:,:,:,:], batch_y[:,:,:,:,:], batch_static[:,:,:], batch_quantiles[:,:], loss_type=self.loss_type)
 
 
             if epoch >= 0:

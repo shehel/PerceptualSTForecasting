@@ -37,12 +37,19 @@ class QuantileRegressionLoss(nn.Module):
     def forward(self, pred, target, mask, quantiles):
         total_loss = 0
         individual_losses = []
+        middle_index = len(self.quantile_weights) // 2
         for i, q_weight in enumerate(self.quantile_weights):
             q_pred = pred[:, i, :, :, :].squeeze()
+            # skip if quantile is 0.5
+            if quantiles[0,i] == 0.5:
+                continue
             q_quantile = quantiles[:, i:i+1]
             loss = q_weight * self.pinball_loss(q_pred, target.squeeze(), q_quantile, mask)
             individual_losses.append(loss)
             total_loss += loss
+        mae_loss = torch.mean(torch.abs(pred[:, middle_index, :, :, :] - target))
+        individual_losses.append(mae_loss)
+        total_loss += mae_loss
         return total_loss, individual_losses
 
 class PinballLoss():
@@ -65,7 +72,10 @@ class PinballLoss():
         # Apply quantile to each batch element
         quantile_expanded = quantile.view(-1, 1, 1, 1, 1).expand_as(error)  # Adjust dimensions to match error
 
-        loss[smaller_index] = quantile_expanded[smaller_index] * torch.abs(error[smaller_index])
+        try:
+            loss[smaller_index] = quantile_expanded[smaller_index] * torch.abs(error[smaller_index])
+        except:
+            pdb.set_trace()
         loss[bigger_index] = (1 - quantile_expanded[bigger_index]) * torch.abs(error[bigger_index])
 
         if self.reduction == 'sum':
@@ -109,7 +119,7 @@ def mis_loss_func(
     Args:
         y_pred (torch.tensor): Predicted values
         y_true (torch.tensor): True values
-        interval (float): confidence interval (e.g. 0.95 for 95% confidence interval)
+        alpha (float): 1-confidence interval (e.g. 0.05 for 95% confidence interval)
 
     Returns:
         torch.tensor: output losses
@@ -125,23 +135,32 @@ def mis_loss_func(
 
     return loss
 
+
+
 # As per definition in Dewolf paper
-def eval_quantiles(lower, upper, trues,mask):
-    N = mask.sum()*4
+def eval_quantiles(lower, upper, trues,mask, time_step=1):
+    N = mask.sum()*time_step
 
     icp = torch.sum((trues > lower) & (trues < upper)).float() / N
     diffs = torch.abs(upper - lower)
     mil = torch.sum(diffs) / N
 
     return icp, mil
+
 class IntervalScores(nn.Module):
     def __init__(self, quantile_weights):
         super(IntervalScores, self).__init__()
-        self.q_loss = QuantileRegressionLoss(quantile_weights)
+        self.quantile_loss_fn = QuantileRegressionLoss(quantile_weights)
+        self.mis_loss_fn = WeightedMISLoss(quantile_weights)
 
-    def forward(self, pred, true, mask, quantiles, train_run=True):
+    def forward(self, pred, true, mask, quantiles, train_run=True, loss_type='quantile'):
         pred = pred * torch.unsqueeze(mask, 1)
-        total_loss, individual_losses = self.q_loss(pred, true, mask, quantiles)
+        if loss_type == 'quantile':
+            total_loss, individual_losses = self.quantile_loss_fn(pred, true, mask, quantiles)
+        elif loss_type == 'mis':
+            total_loss, individual_losses = self.mis_loss_fn(pred, true, mask, quantiles)
+        else:
+            raise ValueError("Invalid loss_type. Choose 'quantile' or 'mis'.")
         return total_loss, individual_losses
 
 def set_seed(seed, deterministic=False):
@@ -440,3 +459,41 @@ def reduce_tensor(tensor):
     dist.all_reduce(rt.div_(dist.get_world_size()), op=dist.ReduceOp.SUM)
     return rt
 
+
+class WeightedMISLoss(nn.Module):
+    def __init__(self, quantile_weights):
+        super(WeightedMISLoss, self).__init__()
+        self.quantile_weights = quantile_weights
+
+    def forward(self, y_pred, y_true, mask, quantiles):
+        total_loss = 0
+        individual_losses = []
+
+        num_quantiles = len(self.quantile_weights)
+        middle_index = num_quantiles // 2
+
+        for i in range(middle_index):
+            lower_idx = i
+            upper_idx = num_quantiles - 1 - i
+
+            lower = y_pred[:, lower_idx, :, :, :]
+            upper = y_pred[:, upper_idx, :, :, :]
+
+            alpha = 1 - (quantiles[:, upper_idx] - quantiles[:, lower_idx])
+
+            loss = mis_loss_func(torch.stack([lower, upper], dim=1), y_true, alpha)
+            loss = loss * mask
+            loss = torch.mean(loss)
+
+            weight = (self.quantile_weights[lower_idx] + self.quantile_weights[upper_idx]) / 2
+            weighted_loss = weight * loss
+
+            individual_losses.append(weighted_loss)
+            total_loss += weighted_loss
+
+        # also include a MAE loss
+        # TODO: use mask
+        mae_loss = torch.mean(torch.abs(y_pred[:, middle_index, :, :, :] - y_true))
+        individual_losses.append(mae_loss)
+        total_loss = (total_loss + mae_loss) #/ (middle_index + 1)
+        return total_loss, individual_losses

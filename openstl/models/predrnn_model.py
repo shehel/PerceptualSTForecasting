@@ -34,12 +34,12 @@ class PredRNN_Model(nn.Module):
         self.cell_list = nn.ModuleList(cell_list)
         self.conv_lo1 = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel,
                                    kernel_size=1, stride=1, padding=0, bias=False)
-        self.conv_lo2 = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel,
-                                   kernel_size=1, stride=1, padding=0, bias=False)
+        #self.conv_lo2 = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel,
+        #                           kernel_size=1, stride=1, padding=0, bias=False)
         self.conv_hi1 = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel,
                                    kernel_size=1, stride=1, padding=0, bias=False)
-        self.conv_hi2 = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel,
-                                   kernel_size=1, stride=1, padding=0, bias=False)
+        #self.conv_hi2 = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel,
+        #                           kernel_size=1, stride=1, padding=0, bias=False)
         self.conv_m = nn.Conv2d(num_hidden[num_layers - 1], self.frame_channel,
                                    kernel_size=1, stride=1, padding=0, bias=False)
 
@@ -87,11 +87,11 @@ class PredRNN_Model(nn.Module):
                 h_t[i], c_t[i], memory = self.cell_list[i](h_t[i - 1], h_t[i], c_t[i], memory)
 
             x_lo1 = self.conv_lo1(h_t[self.num_layers - 1])
-            x_lo2 = self.conv_lo2(h_t[self.num_layers - 1])
+            #x_lo2 = self.conv_lo2(h_t[self.num_layers - 1])
             x_hi1 = self.conv_hi1(h_t[self.num_layers - 1])
-            x_hi2 = self.conv_hi2(h_t[self.num_layers - 1])
+            #x_hi2 = self.conv_hi2(h_t[self.num_layers - 1])
             x_gen = self.conv_m(h_t[self.num_layers - 1])
-            x = torch.cat((x_lo1.unsqueeze(1), x_lo2.unsqueeze(1), x_gen.unsqueeze(1), x_hi1.unsqueeze(1), x_hi2.unsqueeze(1)), dim=1)
+            x = torch.cat((x_lo1.unsqueeze(1), x_gen.unsqueeze(1), x_hi1.unsqueeze(1)), dim=1)
             # add an empty dimension at first axis
             #x = x.reshape(batch, 3, self.out_ts, self.out_ch, H, W)
             next_frames.append(x)
